@@ -753,7 +753,6 @@ async function loadDailySummary() {
     const today = toLocalDateStr(new Date());
     const isToday = _trackDate === today;
     try {
-    try {
         const data = await DB.getDailySummary(_trackDate);
         const t = data.totals;
 
