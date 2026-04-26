@@ -439,7 +439,9 @@ async function searchFood() {
 
 // ── Quick-log from search result ─────────────────────────
 async function quickLogFromSearch(name, cal, prot, carbs, fat) {
-    const mealType = document.getElementById('meal-type') ? document.getElementById('meal-type').value : 'snack';
+    const mealTypeEl = document.getElementById('meal-type');
+    const mealType = mealTypeEl ? mealTypeEl.value : 'snack';
+    const mealLabel = mealTypeEl ? mealTypeEl.options[mealTypeEl.selectedIndex].text : 'Snack';
     const now = new Date();
     const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
     try {
@@ -450,7 +452,7 @@ async function quickLogFromSearch(name, cal, prot, carbs, fat) {
             carbs_g: parseFloat(carbs), fat_g: parseFloat(fat),
             health_score: 5, suggestion: '',
         });
-        showToast('success', `Logged: ${name}`, `${cal} kcal · ${prot}g protein`, 4000);
+        showToast('success', `Added to ${mealLabel}`, `${name} · ${cal} kcal · ${prot}g protein`, 4000);
         loadDailySummary();
         loadStreak();
     } catch (e) { showToast('error', 'Log failed', e.message); }
@@ -1791,6 +1793,13 @@ function setSettingsDiet(val, save = true) {
     });
 }
 
+function _setSettingsSaveDirty(dirty) {
+    const btn = document.getElementById('settings-save-btn');
+    if (!btn) return;
+    btn.disabled = !dirty;
+    btn.style.opacity = dirty ? '1' : '0.45';
+}
+
 async function loadSettingsTab() {
     await fetchSettings();
     // Profile display
@@ -1817,6 +1826,13 @@ async function loadSettingsTab() {
     if (groqKeyEl) groqKeyEl.value = _settings.groq_api_key || '';
     // Highlight diet chip
     setSettingsDiet(_settings.diet_type || 'veg', false);
+    // Disable save btn until changes made
+    _setSettingsSaveDirty(false);
+    const settingsFields = ['set-cal','set-protein','set-carbs','set-fat','set-target-weight','set-water','set-height','set-groq-key'];
+    settingsFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', () => _setSettingsSaveDirty(true), { once: false });
+    });
     loadBMI();
     loadStreak();
 }
@@ -1839,6 +1855,7 @@ async function saveSettings() {
     await DB.saveSettings(payload);
     await fetchSettings();
     loadBMI();
+    _setSettingsSaveDirty(false);
     showToast('success', 'Goals saved', `Calories: ${payload.calorie_goal} kcal · Protein: ${payload.protein_goal}g`);
 }
 
