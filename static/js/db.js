@@ -353,4 +353,29 @@ const DB = {
         });
         return lines.join('\n');
     },
+
+    // ── Full Backup / Restore ─────────────────────────────
+    async exportAll() {
+        const stores = ['food_log', 'water_log', 'weight_log', 'settings', 'meal_plan', 'shop_items', 'expenses'];
+        const backup = { version: 1, exported_at: new Date().toISOString() };
+        for (const s of stores) backup[s] = await txGetAll(s);
+        return backup;
+    },
+
+    async importAll(backup) {
+        if (!backup || backup.version !== 1) throw new Error('Invalid backup file');
+        const db = await openDB();
+        const stores = ['food_log', 'water_log', 'weight_log', 'settings', 'meal_plan', 'shop_items', 'expenses'];
+        for (const s of stores) {
+            if (!backup[s]) continue;
+            await new Promise((res, rej) => {
+                const tx = db.transaction(s, 'readwrite');
+                const store = tx.objectStore(s);
+                store.clear();
+                backup[s].forEach(row => store.put(row));
+                tx.oncomplete = res;
+                tx.onerror = () => rej(tx.error);
+            });
+        }
+    },
 };

@@ -909,6 +909,17 @@
             <div id="pwa-installed-msg" style="display:none;color:var(--success,#4caf50);font-size:0.85rem;font-weight:600">
                 <i data-lucide="check-circle" style="width:14px;height:14px;vertical-align:middle"></i> App is installed!
             </div>
+            <hr style="border:none;border-top:1px solid var(--input-border);margin:16px 0">
+            <h3 style="font-size:0.9rem;font-weight:700;margin-bottom:4px"><i data-lucide="shield" class="icon-sm"></i> Data Backup</h3>
+            <p style="color:var(--muted);font-size:0.8rem;margin-bottom:12px">Clearing browser data erases all app data. Save a backup first.</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-primary" onclick="backupData()" style="flex:1;min-width:120px">
+                    <i data-lucide="download"></i> Download Backup
+                </button>
+                <button class="btn" onclick="restoreData()" style="flex:1;min-width:120px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border)">
+                    <i data-lucide="upload"></i> Restore Backup
+                </button>
+            </div>
         </div>
     </div>
 

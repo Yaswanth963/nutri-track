@@ -1678,6 +1678,42 @@ async function exportCSV() {
     } catch (e) { showToast('error', 'Export failed', e.message); }
 }
 
+async function backupData() {
+    try {
+        const backup = await DB.exportAll();
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const date = new Date().toISOString().slice(0, 10);
+        a.download = `nutritrack-backup-${date}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('success', 'Backup saved', 'All your data has been downloaded.');
+    } catch (e) { showToast('error', 'Backup failed', e.message); }
+}
+
+async function restoreData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const backup = JSON.parse(text);
+            const ok = await showConfirm('upload', 'Restore backup?', 'This will overwrite all current data with the backup file.', 'Restore');
+            if (!ok) return;
+            await DB.importAll(backup);
+            await fetchSettings();
+            showToast('success', 'Restored!', 'Your data has been restored. Reloading...');
+            setTimeout(() => location.reload(), 1500);
+        } catch (e) { showToast('error', 'Restore failed', e.message); }
+    };
+    input.click();
+}
+
 // ── Weight ────────────────────────────────────────────────
 async function logWeight() {
     const kg = parseFloat(document.getElementById('weight-kg').value);
