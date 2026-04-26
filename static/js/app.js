@@ -2190,20 +2190,28 @@ async function deleteMealPlan(id) {
 let _installPrompt = null;
 
 function _initPWACard() {
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    const ua = navigator.userAgent;
+    const isIOS = /iphone|ipad|ipod/i.test(ua) && !window.MSStream;
+    const isAndroid = /android/i.test(ua);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     const btn = document.getElementById('pwa-install-btn');
     const iosHint = document.getElementById('pwa-ios-hint');
+    const androidHint = document.getElementById('pwa-android-hint');
     const installedMsg = document.getElementById('pwa-installed-msg');
     if (isStandalone) {
         if (btn) btn.style.display = 'none';
         if (iosHint) iosHint.style.display = 'none';
+        if (androidHint) androidHint.style.display = 'none';
         if (installedMsg) { installedMsg.style.display = ''; ri(); }
     } else if (isIOS) {
         if (btn) btn.style.display = 'none';
-        if (iosHint) { iosHint.style.display = ''; }
+        if (iosHint) iosHint.style.display = '';
+        if (androidHint) androidHint.style.display = 'none';
+    } else if (isAndroid) {
+        // Show manual hint immediately; will be replaced by install button if beforeinstallprompt fires
+        if (androidHint) androidHint.style.display = '';
     }
-    // Chrome/Android: button shown via beforeinstallprompt below
+    // Chrome/Android native prompt: button shown via beforeinstallprompt below
 }
 
 window.addEventListener('beforeinstallprompt', e => {
@@ -2211,8 +2219,11 @@ window.addEventListener('beforeinstallprompt', e => {
     _installPrompt = e;
     const btn = document.getElementById('pwa-install-btn');
     if (btn) { btn.style.display = ''; ri(); }
+    // Hide manual hints — the install button is better
     const iosHint = document.getElementById('pwa-ios-hint');
     if (iosHint) iosHint.style.display = 'none';
+    const androidHint = document.getElementById('pwa-android-hint');
+    if (androidHint) androidHint.style.display = 'none';
 });
 
 window.addEventListener('appinstalled', () => {
