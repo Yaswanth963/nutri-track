@@ -2207,11 +2207,12 @@ function _initPWACard() {
         if (btn) btn.style.display = 'none';
         if (iosHint) iosHint.style.display = '';
         if (androidHint) androidHint.style.display = 'none';
-    } else if (isAndroid) {
-        // Show manual hint immediately; will be replaced by install button if beforeinstallprompt fires
+    } else {
+        // Android, desktop Chrome, or any other browser — show manual hint immediately.
+        // Will be replaced by native install button if beforeinstallprompt fires.
         if (androidHint) androidHint.style.display = '';
     }
-    // Chrome/Android native prompt: button shown via beforeinstallprompt below
+    // Native install prompt: button shown via beforeinstallprompt below
 }
 
 window.addEventListener('beforeinstallprompt', e => {
