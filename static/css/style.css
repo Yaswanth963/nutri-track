@@ -782,6 +782,7 @@ input[type="number"].themed-input,
 input[type="date"].themed-input,
 input[type="month"].themed-input,
 input[type="text"].themed-input,
+input[type="password"].themed-input,
 select.themed-input {
     background: var(--input-bg); color: var(--text);
     border: 1px solid var(--input-border);
@@ -794,6 +795,7 @@ input[type="number"].themed-input:focus,
 input[type="date"].themed-input:focus,
 input[type="month"].themed-input:focus,
 input[type="text"].themed-input:focus,
+input[type="password"].themed-input:focus,
 select.themed-input:focus {
     border-color: var(--primary); outline: none;
     box-shadow: 0 0 0 3px var(--primary-glow);
