@@ -23,8 +23,7 @@ let _settings = {
 
 async function fetchSettings() {
     try {
-        const res = await fetch('/api/settings');
-        _settings = await res.json();
+        _settings = await DB.getSettings();
         const calGoalEl = document.getElementById('lbl-cal-goal');
         const protGoalEl = document.getElementById('lbl-protein-goal');
         const waterGoalEl = document.getElementById('water-goal-lbl');
@@ -163,27 +162,16 @@ async function obFinish() {
 
     // Save weight entry
     if (weight_kg) {
-        await fetch('/api/log-weight', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ weight_kg, date: toLocalDateStr(new Date()) })
-        });
+        await DB.logWeight(toLocalDateStr(new Date()), weight_kg, '');
     }
 
-    const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (data.success) {
-        hideOnboarding();
-        await fetchSettings();
-        loadDailySummary();
-        loadStreak();
-        loadTodayPlan();
-        showToast('success', `Welcome, ${name}!`, `Your goals are set: ${calGoal} kcal · ${protGoal}g protein/day`);
-    }
+    await DB.saveSettings(payload);
+    hideOnboarding();
+    await fetchSettings();
+    loadDailySummary();
+    loadStreak();
+    loadTodayPlan();
+    showToast('success', `Welcome, ${name}!`, `Your goals are set: ${calGoal} kcal · ${protGoal}g protein/day`);
 }
 
 // ── Tab scroll arrows ────────────────────────────────────
@@ -403,10 +391,10 @@ async function searchFood() {
     loading.classList.add('show');
     result.classList.remove('show');
     try {
-        const res = await fetch('/api/search-food?q=' + encodeURIComponent(query));
-        const data = await res.json();
-        if (data.error) {
-            result.innerHTML = `<div style="color:var(--danger);font-size:0.85rem">${data.error}</div>`;
+        const apiKey = _settings.groq_api_key || '';
+        const data = await Groq.analyzeFood(apiKey, query);
+        if (data.suggestion && !data.calories && !apiKey) {
+            result.innerHTML = `<div style="color:var(--danger);font-size:0.85rem">${data.suggestion}</div>`;
             result.classList.add('show'); return;
         }
         const score = data.health_score || 5;
@@ -454,27 +442,18 @@ async function quickLogFromSearch(name, cal, prot, carbs, fat) {
     const mealType = document.getElementById('meal-type') ? document.getElementById('meal-type').value : 'snack';
     const now = new Date();
     const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-    const fd = new FormData();
-    fd.append('description', name);
-    fd.append('meal_type', mealType);
-    fd.append('log_date', _trackDate);
-    fd.append('time', time);
-    // Pass pre-computed macros so AI is skipped
-    fd.append('calories', cal);
-    fd.append('protein_g', prot);
-    fd.append('carbs_g', carbs);
-    fd.append('fat_g', fat);
     try {
-        const res = await fetch('/api/log-food', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.success || data.id) {
-            showToast('success', `Logged: ${name}`, `${cal} kcal · ${prot}g protein`, 4000);
-            loadDailySummary();
-            loadStreak();
-        } else {
-            showToast('error', 'Log failed', data.error || 'Unknown error');
-        }
-    } catch (e) { showToast('error', 'Network error', e.message); }
+        await DB.addFood({
+            description: name, meal_type: mealType,
+            date: _trackDate, time,
+            calories: parseFloat(cal), protein_g: parseFloat(prot),
+            carbs_g: parseFloat(carbs), fat_g: parseFloat(fat),
+            health_score: 5, suggestion: '',
+        });
+        showToast('success', `Logged: ${name}`, `${cal} kcal · ${prot}g protein`, 4000);
+        loadDailySummary();
+        loadStreak();
+    } catch (e) { showToast('error', 'Log failed', e.message); }
 }
 
 // ── Mic / Speech Recognition ──────────────────────────────
@@ -631,44 +610,55 @@ async function logFood(e) {
     btn.disabled = true;
     loading.classList.add('show');
 
-    const fd = new FormData();
-    fd.append('meal_type', document.getElementById('meal-type').value);
-    fd.append('description', desc);
-    fd.append('log_date', _trackDate);
-    if (img) fd.append('image', img, 'capture.jpg');
-
     try {
-        const res = await fetch('/api/log-food', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.success) {
-            const a = data.analysis;
-            showToast('success', `Logged: ${a.food_name}`, `${a.calories} kcal · ${a.protein_g}g protein`, 4500);
-            // Inline result card
-            const lrcName = document.getElementById('lrc-name');
-            if (lrcName) { const sp = lrcName.querySelector('span') || lrcName; sp.textContent = a.food_name; }
-            document.getElementById('lrc-cal').textContent = a.calories;
-            document.getElementById('lrc-p').textContent = a.protein_g + 'g';
-            document.getElementById('lrc-c').textContent = a.carbs_g + 'g';
-            document.getElementById('lrc-f').textContent = a.fat_g + 'g';
-            document.getElementById('lrc-tip').textContent = a.suggestion || '';
-            document.getElementById('log-result-card').style.display = 'block';
-            form.reset();
-            _capturedBlob = null;
-            document.getElementById('preview-wrap').classList.remove('show');
-            document.getElementById('img-preview').src = '';
-            document.getElementById('file-drop').classList.remove('has-file');
-            // Collapse photo section
-            const ps = document.getElementById('photo-section');
-            const pt = document.getElementById('photo-toggle');
-            if (ps) ps.classList.remove('open');
-            if (pt) pt.classList.remove('active');
-            refreshLogBtn();
-            loadDailySummary();
-            loadStreak();
-        } else {
-            showToast('error', 'Log failed', data.error || 'Unknown error');
+        const mealType = document.getElementById('meal-type').value;
+        const now = new Date();
+        const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+        const apiKey = _settings.groq_api_key || '';
+
+        // Convert image to base64 if provided
+        let imgBase64 = null;
+        if (img) {
+            imgBase64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(img);
+            });
         }
-    } catch (err) { showToast('error', 'Network error', err.message); }
+
+        const a = await Groq.analyzeFood(apiKey, desc, imgBase64);
+        await DB.addFood({
+            description: desc || a.food_name, meal_type: mealType,
+            date: _trackDate, time,
+            calories: a.calories, protein_g: a.protein_g,
+            carbs_g: a.carbs_g, fat_g: a.fat_g,
+            health_score: a.health_score || 5, suggestion: a.suggestion || '',
+        });
+        showToast('success', `Logged: ${a.food_name}`, `${a.calories} kcal · ${a.protein_g}g protein`, 4500);
+        // Inline result card
+        const lrcName = document.getElementById('lrc-name');
+        if (lrcName) { const sp = lrcName.querySelector('span') || lrcName; sp.textContent = a.food_name; }
+        document.getElementById('lrc-cal').textContent = a.calories;
+        document.getElementById('lrc-p').textContent = a.protein_g + 'g';
+        document.getElementById('lrc-c').textContent = a.carbs_g + 'g';
+        document.getElementById('lrc-f').textContent = a.fat_g + 'g';
+        document.getElementById('lrc-tip').textContent = a.suggestion || '';
+        document.getElementById('log-result-card').style.display = 'block';
+        form.reset();
+        _capturedBlob = null;
+        document.getElementById('preview-wrap').classList.remove('show');
+        document.getElementById('img-preview').src = '';
+        document.getElementById('file-drop').classList.remove('has-file');
+        // Collapse photo section
+        const ps = document.getElementById('photo-section');
+        const pt = document.getElementById('photo-toggle');
+        if (ps) ps.classList.remove('open');
+        if (pt) pt.classList.remove('active');
+        refreshLogBtn();
+        loadDailySummary();
+        loadStreak();
+    } catch (err) { showToast('error', 'Log failed', err.message); }
     finally { btn.disabled = false; loading.classList.remove('show'); }
     return false;
 }
@@ -687,9 +677,7 @@ async function loadTodayPlan() {
     if (sessionStorage.getItem(dismissKey)) { card.style.display = 'none'; return; }
 
     try {
-        const res = await fetch('/api/meal-plan/today');
-        const data = await res.json();
-        const plans = data.plans || [];
+        const plans = await DB.getTodayMealPlan();
 
         if (!plans.length) { card.style.display = 'none'; return; }
 
@@ -726,29 +714,30 @@ async function logPlanItem(planId) {
     const item = document.querySelector(`[data-plan-id="${planId}"]`);
     const mealType = item ? item.dataset.mealType : '';
     const description = item ? item.dataset.description : '';
-    const fd = new FormData();
-    fd.append('meal_type', mealType);
-    fd.append('description', description);
 
     // Optimistically hide the button
     const btn = item ? item.querySelector('.today-plan-log-btn') : null;
     if (btn) { btn.style.display = 'none'; }
 
     try {
-        const res = await fetch('/api/log-food', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (data.success) {
-            _loggedPlanIds.add(planId);
-            showToast('success', 'Logged from plan', `${data.analysis.food_name} · ${data.analysis.calories} kcal`);
-            await loadDailySummary();
-            loadStreak();
-            loadTodayPlan(); // re-render to show ✓ Done state
-        } else {
-            showToast('error', 'Log failed', data.error || 'Try again');
-            if (btn) { btn.style.display = 'flex'; }
-        }
+        const apiKey = _settings.groq_api_key || '';
+        const now = new Date();
+        const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+        const a = await Groq.analyzeFood(apiKey, description);
+        await DB.addFood({
+            description, meal_type: mealType,
+            date: _trackDate, time,
+            calories: a.calories, protein_g: a.protein_g,
+            carbs_g: a.carbs_g, fat_g: a.fat_g,
+            health_score: a.health_score || 5, suggestion: a.suggestion || '',
+        });
+        _loggedPlanIds.add(planId);
+        showToast('success', 'Logged from plan', `${a.food_name} · ${a.calories} kcal`);
+        await loadDailySummary();
+        loadStreak();
+        loadTodayPlan(); // re-render to show ✓ Done state
     } catch (e) {
-        showToast('error', 'Network error', e.message);
+        showToast('error', 'Log failed', e.message);
         if (btn) { btn.style.display = 'flex'; }
     }
 }
@@ -764,8 +753,8 @@ async function loadDailySummary() {
     const today = toLocalDateStr(new Date());
     const isToday = _trackDate === today;
     try {
-        const res = await fetch('/api/daily-summary?date=' + _trackDate);
-        const data = await res.json();
+    try {
+        const data = await DB.getDailySummary(_trackDate);
         const t = data.totals;
 
         // Update macros
@@ -924,21 +913,20 @@ async function loadDailySummary() {
 async function deleteFood(id) {
     const ok = await showConfirm('trash-2', 'Delete entry?', 'This meal will be permanently removed.', 'Delete');
     if (!ok) return;
-    await fetch('/api/delete-food/' + id, { method: 'DELETE' });
+    await DB.deleteFood(id);
     showToast('info', 'Entry deleted', 'Meal removed.');
     loadDailySummary();
 }
 
 // ── Water ─────────────────────────────────────────────────
 async function logWater() {
-    const res = await fetch('/api/water', { method: 'POST' });
-    const data = await res.json();
-    document.getElementById('water-count').textContent = data.glasses;
-    renderWater(data.glasses);
+    const glasses = await DB.logWater(_trackDate);
+    document.getElementById('water-count').textContent = glasses;
+    renderWater(glasses);
 }
 
 async function resetWater() {
-    await fetch('/api/water/reset', { method: 'POST' });
+    await DB.resetWater(_trackDate);
     document.getElementById('water-count').textContent = 0;
     renderWater(0);
 }
@@ -974,21 +962,10 @@ function renderWater(count) {
         d.innerHTML = _glassSVG(filled, i);
         d.addEventListener('click', async () => {
             const target = i + 1;
-            if (target <= count) {
-                await fetch('/api/water/set', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ glasses: target - 1 })
-                });
-            } else {
-                for (let j = count; j < target; j++) {
-                    await fetch('/api/water', { method: 'POST' });
-                }
-            }
-            const d2 = await fetch('/api/daily-summary');
-            const data2 = await d2.json();
-            document.getElementById('water-count').textContent = data2.totals.water_glasses;
-            renderWater(data2.totals.water_glasses);
+            const newCount = target <= count ? target - 1 : target;
+            const glasses = await DB.setWater(_trackDate, newCount);
+            document.getElementById('water-count').textContent = glasses;
+            renderWater(glasses);
         });
         container.appendChild(d);
     }
@@ -1014,9 +991,10 @@ async function getSuggestion() {
     const el = document.getElementById('suggestion');
     el.innerHTML = `<div class="sug-loading"><div class="spinner"></div> Analysing your intake...</div>`;
     try {
-        const res = await fetch('/api/suggestion');
-        const data = await res.json();
-        const raw = (data.suggestion || '').trim();
+        const apiKey = _settings.groq_api_key || '';
+        const today = toLocalDateStr(new Date());
+        const summary = await DB.getDailySummary(today);
+        const raw = await Groq.getSuggestion(apiKey, _settings, summary.foods || [], summary.totals.water_glasses || 0);
         // Split into sentences / bullet points
         const lines = raw
             .split(/(?:\r?\n|(?<=\.)\s+(?=[A-Z0-9•\-]))/g)
@@ -1047,10 +1025,11 @@ async function loadNutritionGaps() {
     grid.innerHTML = '';
     loading.style.display = 'flex';
     try {
-        const res = await fetch('/api/nutrition-gaps');
-        const data = await res.json();
+        const apiKey = _settings.groq_api_key || '';
+        const today = toLocalDateStr(new Date());
+        const todaySummary = await DB.getDailySummary(today);
+        const data = await Groq.nutritionGaps(apiKey, _settings, todaySummary.foods || []);
         loading.style.display = 'none';
-        if (data.error) { grid.innerHTML = `<div class="sug-single" style="color:var(--danger)">${data.error}</div>`; return; }
         const scoreColor = data.score >= 7 ? 'var(--success)' : data.score >= 4 ? 'var(--warning)' : 'var(--danger)';
         summary.innerHTML = `<span style="font-weight:700;color:${scoreColor}">${data.score}/10</span> — ${data.summary}`;
         (data.gaps || []).forEach(g => {
@@ -1081,10 +1060,11 @@ async function loadMealSwaps() {
     list.innerHTML = '';
     loading.style.display = 'flex';
     try {
-        const res = await fetch('/api/meal-swap');
-        const data = await res.json();
+        const apiKey = _settings.groq_api_key || '';
+        const today = toLocalDateStr(new Date());
+        const todaySummary = await DB.getDailySummary(today);
+        const data = await Groq.mealSwap(apiKey, _settings, todaySummary.foods || []);
         loading.style.display = 'none';
-        if (data.error) { list.innerHTML = `<div class="sug-single" style="color:var(--danger)">${data.error}</div>`; return; }
         (data.issues || []).forEach(issue => {
             list.innerHTML += `<div class="swap-item">
                 <div class="swap-item-header">
@@ -1141,29 +1121,25 @@ async function generateRecipe() {
     document.getElementById('recipe-loading').style.display = 'flex';
 
     try {
-        const res = await fetch('/api/recipe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dish, servings: parseInt(servings) })
-        });
-        const data = await res.json();
-        if (data.error) { showToast('error', 'Recipe error', data.error); return; }
+        const apiKey = _settings.groq_api_key || '';
+        const data = await Groq.generateRecipe(apiKey, dish);
 
-        const emoji = getDishEmoji(data.dish || dish);
-        const ytQuery = encodeURIComponent(`how to make ${data.dish || dish} recipe`);
+        const ytQuery = encodeURIComponent(`how to make ${data.title || dish} recipe`);
         const ytUrl = `https://www.youtube.com/results?search_query=${ytQuery}`;
         const srv = data.servings || servings;
+        const emoji = getDishEmoji(data.title || dish);
 
         const result = document.getElementById('recipe-result');
+        const n = data.nutrition_per_serving || {};
         result.innerHTML = `
             <div class="card recipe-hero-card">
                 <div class="recipe-hero-emoji">${emoji}</div>
-                <h2 class="recipe-dish-title">${data.dish || dish}</h2>
+                <h2 class="recipe-dish-title">${data.title || dish}</h2>
                 <p class="recipe-hero-sub">For ${srv} serving${srv > 1 ? 's' : ''}</p>
                 <div class="recipe-meta-chips">
                     <span class="recipe-meta-chip">⏱ ${data.prep_time || '--'} prep</span>
                     <span class="recipe-meta-chip">🔥 ${data.cook_time || '--'} cook</span>
-                    <span class="recipe-meta-chip recipe-meta-chip-cost">₹ ~${data.total_cost_inr || '--'}</span>
+                    ${n.calories ? `<span class="recipe-meta-chip">${n.calories} kcal/serve</span>` : ''}
                 </div>
                 <a class="recipe-yt-btn" href="${ytUrl}" target="_blank" rel="noopener noreferrer">
                     <span class="yt-icon"><span class="yt-triangle"></span></span>
@@ -1173,30 +1149,32 @@ async function generateRecipe() {
 
             <div class="card">
                 <h2 class="recipe-section-title">🥕 Ingredients</h2>
-                <div class="recipe-ingr-grid">
-                    ${(data.ingredients || []).map(i => `
-                        <div class="recipe-ingr-card">
-                            <span class="recipe-ingr-name">${i.name}</span>
-                            <span class="recipe-ingr-qty">${i.quantity}</span>
-                            <span class="recipe-ingr-cost">₹${i.cost_inr}</span>
-                        </div>`).join('')}
-                </div>
-                <div class="recipe-ingr-total-bar">
-                    <span>Estimated Total</span>
-                    <span class="recipe-total-val">₹${data.total_cost_inr || '--'}</span>
-                </div>
+                <ul class="recipe-ingr-list">
+                    ${(data.ingredients || []).map(i => `<li class="recipe-ingr-item">${i}</li>`).join('')}
+                </ul>
             </div>
 
             <div class="card">
                 <h2 class="recipe-section-title">👨‍🍳 Preparation</h2>
                 <div class="recipe-timeline">
-                    ${(data.steps || []).map((s, i) => `
+                    ${(data.instructions || []).map((s, i) => `
                         <div class="recipe-step">
                             <div class="recipe-step-num">${i + 1}</div>
                             <div class="recipe-step-text">${s}</div>
                         </div>`).join('')}
                 </div>
             </div>
+
+            ${n.calories ? `
+            <div class="card">
+                <h2 class="recipe-section-title">📊 Nutrition per Serving</h2>
+                <div class="search-macro-grid">
+                    <div class="search-macro"><div class="sv">${n.calories}</div><div class="sl">kcal</div></div>
+                    <div class="search-macro"><div class="sv">${n.protein_g}g</div><div class="sl">protein</div></div>
+                    <div class="search-macro"><div class="sv">${n.carbs_g}g</div><div class="sl">carbs</div></div>
+                    <div class="search-macro"><div class="sv">${n.fat_g}g</div><div class="sl">fat</div></div>
+                </div>
+            </div>` : ''}
 
             ${data.tips ? `
             <div class="card recipe-tips-card">
@@ -1290,8 +1268,12 @@ async function loadExpenses() {
     if (cat) params.set('category', cat);
     if (search) params.set('search', search);
 
-    const res = await fetch('/api/expenses?' + params.toString());
-    const data = await res.json();
+    const expenses = await DB.getExpenses({ month, category: cat, q: search });
+    const data = {
+        expenses,
+        total_debit: expenses.reduce((s, e) => s + (e.amount || 0), 0),
+        cat_totals: expenses.reduce((acc, e) => { acc[e.category] = (acc[e.category] || 0) + (e.amount || 0); return acc; }, {}),
+    };
 
     // Summary
     document.getElementById('ss-debit').textContent = fmtAmt(data.total_debit);
@@ -1405,36 +1387,33 @@ async function saveExpense() {
         type,
         note: document.getElementById('exp-note').value.trim()
     };
-    const url = id ? `/api/expenses/${id}` : '/api/expenses';
-    const method = id ? 'PATCH' : 'POST';
-    const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const data = await res.json();
-    if (data.error) { showToast('error', 'Error', data.error); return; }
+    if (id) {
+        await DB.updateExpense(parseInt(id), body);
+    } else {
+        await DB.addExpense(body);
+    }
     document.getElementById('expense-modal-backdrop').style.display = 'none';
     showToast('success', id ? 'Updated' : 'Added', id ? 'Expense updated.' : 'Expense logged.');
     loadExpenses();
 }
 
 async function editExpense(id) {
-    const res = await fetch(`/api/expenses?search=`);
-    const data = await res.json();
-    const exp = data.expenses.find(e => e.id === id);
+    const expenses = await DB.getExpenses({});
+    const exp = expenses.find(e => e.id === id);
     if (exp) openExpenseModal(exp);
 }
 
 async function deleteExpense(id) {
     const ok = await showConfirm('trash-2', 'Delete expense?', 'This entry will be permanently removed.', 'Delete');
     if (!ok) return;
-    await fetch(`/api/expenses/${id}`, { method: 'DELETE' });
+    await DB.deleteExpense(id);
     showToast('info', 'Deleted', 'Expense removed.');
     loadExpenses();
 }
 
 function exportExpenses(e) {
     e.preventDefault();
-    const month = document.getElementById('spend-month-filter').value;
-    const params = month ? `?month=${month}` : '';
-    window.location.href = '/api/expenses/export-csv' + params;
+    showToast('info', 'Export', 'Use the CSV export in History tab for food data.');
 }
 
 // ── Shop / Buy List ───────────────────────────────────────
@@ -1456,11 +1435,15 @@ async function loadShopItems() {
     empty.style.display = 'none';
 
     try {
-        const res  = await fetch('/api/shop-items');
-        const data = await res.json();
+        const shopItems = await DB.getShopItems();
         loading.style.display = 'none';
 
-        const grouped = data.grouped || {};
+        const grouped = {};
+        shopItems.forEach(item => {
+            const cat = item.category || 'Other';
+            if (!grouped[cat]) grouped[cat] = [];
+            grouped[cat].push(item);
+        });
         const keys = Object.keys(grouped);
         const totalItems  = keys.reduce((s, k) => s + grouped[k].length, 0);
         const checkedCount = keys.reduce((s, k) => s + grouped[k].filter(i => i.checked).length, 0);
@@ -1513,12 +1496,8 @@ async function addShopItem() {
     const name   = nameEl.value.trim();
     if (!name) { nameEl.focus(); return; }
 
-    const res  = await fetch('/api/shop-items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, quantity: qtyEl.value.trim(), category: catEl.value })
-    });
-    if ((await res.json()).id) {
+    const item = await DB.addShopItem({ name, quantity: qtyEl.value.trim(), category: catEl.value });
+    if (item) {
         nameEl.value = '';
         qtyEl.value  = '';
         await loadShopItems();
@@ -1528,11 +1507,7 @@ async function addShopItem() {
 async function toggleShopItem(id, checked) {
     const el = document.getElementById('shop-item-' + id);
     if (el) el.classList.toggle('checked', checked);
-    await fetch(`/api/shop-items/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checked })
-    });
+    await DB.updateShopItem(id, { checked });
     // Refresh count labels without full re-render
     const allItems = document.querySelectorAll('#shop-content .shop-item');
     const total    = allItems.length;
@@ -1544,12 +1519,12 @@ async function toggleShopItem(id, checked) {
 }
 
 async function deleteShopItem(id) {
-    await fetch(`/api/shop-items/${id}`, { method: 'DELETE' });
+    await DB.deleteShopItem(id);
     await loadShopItems();
 }
 
 async function clearCheckedShopItems() {
-    await fetch('/api/shop-items/checked', { method: 'DELETE' });
+    await DB.deleteCheckedShopItems();
     await loadShopItems();
 }
 
@@ -1570,10 +1545,8 @@ async function loadCalorieTrend() {
     if (!container) return;
     container.innerHTML = '<div class="sug-loading" style="padding:16px"><div class="spinner"></div></div>';
     try {
-        const res = await fetch('/api/calorie-trend?days=' + _trendDays);
-        const data = await res.json();
-        const trend = data.trend;
-        const goal = data.calorie_goal;
+        const trend = await DB.getCalorieTrend(_trendDays);
+        const goal = _settings.calorie_goal || 2100;
         const logged = trend.filter(t => t.calories !== null);
         const avgCal = logged.length ? Math.round(logged.reduce((s, t) => s + t.calories, 0) / logged.length) : 0;
 
@@ -1668,8 +1641,7 @@ async function loadCalorieTrend() {
 
 async function loadHistory() {
     try {
-        const res = await fetch('/api/history');
-        const data = await res.json();
+        const data = await DB.getHistory(60);
         const container = document.getElementById('history-list');
         const noHist = document.getElementById('no-history');
         container.innerHTML = '';
@@ -1687,7 +1659,18 @@ async function loadHistory() {
     } catch (err) { console.error(err); }
 }
 
-function exportCSV() { window.location.href = '/api/export/csv'; }
+async function exportCSV() {
+    try {
+        const csv = await DB.exportFoodsCSV();
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'nutritrack-export.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) { showToast('error', 'Export failed', e.message); }
+}
 
 // ── Weight ────────────────────────────────────────────────
 async function logWeight() {
@@ -1695,23 +1678,15 @@ async function logWeight() {
     const dt = document.getElementById('weight-date').value;
     const note = document.getElementById('weight-note').value.trim();
     if (!kg || kg < 30 || kg > 300) { showToast('warn', 'Invalid weight', 'Enter a value between 30–300 kg.'); return; }
-    const res = await fetch('/api/log-weight', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ weight_kg: kg, date: dt, note })
-    });
-    const data = await res.json();
-    if (data.success) {
-        document.getElementById('weight-kg').value = '';
-        document.getElementById('weight-note').value = '';
-        showToast('success', 'Weight saved', `${kg} kg logged for ${dt}.`);
-        loadWeightHistory();
-    }
+    await DB.logWeight(dt, kg, note);
+    document.getElementById('weight-kg').value = '';
+    document.getElementById('weight-note').value = '';
+    showToast('success', 'Weight saved', `${kg} kg logged for ${dt}.`);
+    loadWeightHistory();
 }
 
 async function loadWeightHistory() {
-    const res = await fetch('/api/weight-history');
-    const data = await res.json();
+    const data = await DB.getWeightHistory();
     const entries = data.entries;
     const noW = document.getElementById('no-weight');
     const list = document.getElementById('weight-list');
@@ -1787,7 +1762,7 @@ async function loadWeightHistory() {
 async function deleteWeight(dt) {
     const ok = await showConfirm('scale', 'Delete weight entry?', `Entry for ${dt} will be removed.`, 'Delete');
     if (!ok) return;
-    await fetch('/api/delete-weight/' + dt, { method: 'DELETE' });
+    await DB.deleteWeight(dt);
     showToast('info', 'Entry deleted', `Weight for ${dt} removed.`);
     loadWeightHistory();
 }
@@ -1797,14 +1772,13 @@ renderWater(0);
 // ── Streak ────────────────────────────────────────────────
 async function loadStreak() {
     try {
-        const res = await fetch('/api/streak');
-        const data = await res.json();
+        const data = await DB.getStreak();
         const sv = document.getElementById('streak-val');
         if (sv) sv.textContent = data.streak + (data.streak === 1 ? ' day' : ' days');
         const sc = document.getElementById('streak-current');
         const sl = document.getElementById('streak-longest');
         if (sc) sc.textContent = data.streak + ' days';
-        if (sl) sl.textContent = data.longest + ' days';
+        if (sl) sl.textContent = (data.longest || data.streak) + ' days';
     } catch (e) {}
 }
 
@@ -1839,6 +1813,9 @@ async function loadSettingsTab() {
     document.getElementById('set-target-weight').value = _settings.target_weight || '';
     document.getElementById('set-water').value = _settings.water_goal;
     document.getElementById('set-height').value = _settings.height_cm;
+    // Groq API key
+    const groqKeyEl = document.getElementById('set-groq-key');
+    if (groqKeyEl) groqKeyEl.value = _settings.groq_api_key || '';
     // Highlight diet chip
     setSettingsDiet(_settings.diet_type || 'veg', false);
     loadBMI();
@@ -1856,39 +1833,41 @@ async function saveSettings() {
         height_cm: parseFloat(document.getElementById('set-height').value) || 170,
         diet_type: _settingsDiet || 'veg',
     };
-    const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-    if (data.success) {
-        await fetchSettings();
-        loadBMI();
-        showToast('success', 'Goals saved', `Calories: ${payload.calorie_goal} kcal · Protein: ${payload.protein_goal}g`);
-    }
+    // Also update groq_api_key field
+    const groqKeyEl = document.getElementById('set-groq-key');
+    if (groqKeyEl) payload.groq_api_key = groqKeyEl.value.trim();
+
+    await DB.saveSettings(payload);
+    await fetchSettings();
+    loadBMI();
+    showToast('success', 'Goals saved', `Calories: ${payload.calorie_goal} kcal · Protein: ${payload.protein_goal}g`);
 }
 
 // ── BMI ───────────────────────────────────────────────────
 async function loadBMI() {
     try {
-        const res = await fetch('/api/bmi');
-        const d = await res.json();
+        const weightData = await DB.getWeightHistory();
         const valEl = document.getElementById('bmi-value');
         const catEl = document.getElementById('bmi-category');
         const detEl = document.getElementById('bmi-detail');
         if (!valEl) return;
-        if (d.bmi === null) {
+        const height_cm = _settings.height_cm;
+        const latestWeight = weightData.entries && weightData.entries[0];
+        if (!latestWeight || !height_cm) {
             valEl.textContent = '--';
             catEl.textContent = 'Log weight to calculate BMI';
             detEl.textContent = '';
             return;
         }
-        valEl.textContent = d.bmi;
+        const weight_kg = latestWeight.weight_kg;
+        const h = height_cm / 100;
+        const bmi = Math.round((weight_kg / (h * h)) * 10) / 10;
+        const cat = bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Overweight' : 'Obese';
+        valEl.textContent = bmi;
         const colors = { Normal: 'var(--success)', Underweight: 'var(--warning)', Overweight: 'var(--warning)', Obese: 'var(--danger)' };
-        valEl.style.color = colors[d.category] || 'var(--primary)';
-        catEl.textContent = d.category;
-        detEl.textContent = `${d.weight_kg} kg · ${d.height_cm} cm`;
+        valEl.style.color = colors[cat] || 'var(--primary)';
+        catEl.textContent = cat;
+        detEl.textContent = `${weight_kg} kg · ${height_cm} cm`;
     } catch (e) {}
 }
 
@@ -1914,12 +1893,8 @@ function setPlanDiet(val) {
     });
     // Sync settings tab chips
     setSettingsDiet(val, false);
-    // Save to server
-    fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ diet_type: val })
-    }).catch(() => {});
+    // Save to DB
+    DB.saveSettings({ diet_type: val }).catch(() => {});
     // Clear suggestions so next load uses new diet
     clearSuggestions();
     document.getElementById('more-suggest-wrap').style.display = 'none';
@@ -1945,12 +1920,11 @@ async function loadFoodSuggestions() {
     _selectedSuggestIdx = -1;
 
     try {
-        const res = await fetch('/api/suggest-foods?meal_type=' + mealType);
-        const data = await res.json();
+        const apiKey = _settings.groq_api_key || '';
+        const foods = await Groq.suggestFoods(apiKey, _settings, mealType);
         loading.style.display = 'none';
-        if (data.error) { grid.innerHTML = `<div class="sug-single" style="color:var(--danger)">${data.error}</div>`; return; }
 
-        _suggestFoods = data.foods || [];
+        _suggestFoods = Array.isArray(foods) ? foods : [];
         if (!_suggestFoods.length) { grid.innerHTML = '<div class="sug-single">No suggestions returned.</div>'; return; }
 
         _suggestFoods.forEach((food, idx) => {
@@ -2017,17 +1991,12 @@ async function confirmSuggestPortion(foodIdx, portionIdx) {
     const planDate = document.getElementById('plan-date').value;
     const mealType = document.getElementById('plan-meal-type').value;
 
-    const res = await fetch('/api/meal-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            date: planDate, meal_type: mealType,
-            description: food.name, quantity: portion.qty,
-            planned_calories: portion.kcal
-        })
+    const entry = await DB.addMealPlan({
+        date: planDate, meal_type: mealType,
+        description: food.name, quantity: portion.qty,
+        planned_calories: portion.kcal
     });
-    const data = await res.json();
-    if (data.success) {
+    if (entry) {
         showToast('success', 'Added to plan', `${food.name} · ${portion.qty} · ${portion.kcal} kcal`);
         // Remove card from grid
         const card = document.querySelector(`.suggest-food-card[data-idx="${foodIdx}"]`);
@@ -2066,15 +2035,14 @@ function shiftPlanWeek(delta) {
 
 async function loadMealPlan() {
     const weekStart = getPlanWeekStart(_planWeekOffset);
-    const res = await fetch('/api/meal-plan?week=' + weekStart);
-    const data = await res.json();
+    const data = await DB.getMealPlan(weekStart);
     const calendar = document.getElementById('plan-calendar');
     const weekLabel = document.getElementById('plan-week-label');
     calendar.innerHTML = '';
-    weekLabel.textContent = 'Week of ' + data.week_start;
+    weekLabel.textContent = 'Week of ' + (data.week_start || weekStart);
 
     const days = {};
-    data.plans.forEach(p => { if (!days[p.date]) days[p.date] = []; days[p.date].push(p); });
+    (data.plans || []).forEach(p => { if (!days[p.date]) days[p.date] = []; days[p.date].push(p); });
 
     const today = toLocalDateStr(new Date());
 
@@ -2145,32 +2113,25 @@ async function addMealPlan() {
     const qty = (document.getElementById('plan-qty') || {}).value || '';
     const cal = parseInt(document.getElementById('plan-cal').value) || 0;
     if (!desc) { showToast('warn', 'Empty', 'Enter a meal description.'); return; }
-    const res = await fetch('/api/meal-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: planDate, meal_type: mealType, description: desc, quantity: qty, planned_calories: cal })
-    });
-    const data = await res.json();
-    if (data.success) {
-        document.getElementById('plan-desc').value = '';
-        document.getElementById('plan-cal').value = '';
-        if (document.getElementById('plan-qty')) document.getElementById('plan-qty').value = '';
-        showToast('success', 'Planned!', `${mealType}: ${desc}${qty ? ' (' + qty + ')' : ''}`);
-        loadMealPlan();
-    }
+    await DB.addMealPlan({ date: planDate, meal_type: mealType, description: desc, quantity: qty, planned_calories: cal });
+    document.getElementById('plan-desc').value = '';
+    document.getElementById('plan-cal').value = '';
+    if (document.getElementById('plan-qty')) document.getElementById('plan-qty').value = '';
+    showToast('success', 'Planned!', `${mealType}: ${desc}${qty ? ' (' + qty + ')' : ''}`);
+    loadMealPlan();
 }
 
 async function deleteMealPlan(id) {
     const ok = await showConfirm('trash-2', 'Remove plan?', 'This planned meal will be deleted.', 'Remove');
     if (!ok) return;
-    await fetch('/api/meal-plan/' + id, { method: 'DELETE' });
+    await DB.deleteMealPlan(id);
     loadMealPlan();
 }
 
 // ── PWA Service Worker ────────────────────────────────────
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
+        navigator.serviceWorker.register('./sw.js')
             .then(reg => console.log('SW registered, scope:', reg.scope))
             .catch(err => console.warn('SW registration failed:', err));
     });

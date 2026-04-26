@@ -57,18 +57,37 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ── Mobile / touch optimizations ── */
+html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+}
+button, a, [onclick], label {
+    touch-action: manipulation; /* removes 300ms tap delay */
+    -webkit-tap-highlight-color: transparent;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
+    min-height: 100dvh; /* dynamic viewport height — fixes iOS bar issue */
+    overscroll-behavior-y: contain; /* prevent pull-to-refresh interfering */
     transition: background 0.3s, color 0.3s;
 }
 [data-theme="dark"], [data-theme="dark"] body {
     background-image: radial-gradient(ellipse at top, #1a0a00 0%, #080808 60%);
 }
 
-.container { max-width: 480px; margin: 0 auto; padding: 16px; }
+.container {
+    max-width: 480px; margin: 0 auto; padding: 16px;
+    /* safe area for iPhone notch / home bar */
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
 
 /* ── Lucide icon sizing ── */
 .icon-sm { width: 14px; height: 14px; display: inline-block; vertical-align: middle; stroke-width: 2.5; }

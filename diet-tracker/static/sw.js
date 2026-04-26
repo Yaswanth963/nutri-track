@@ -1,12 +1,14 @@
 /* NutriTrack Service Worker */
-const CACHE = 'nutritrack-v1';
+const CACHE = 'nutritrack-v3';
 const SHELL = [
-  '/',
-  '/static/css/style.css',
-  '/static/js/app.js',
-  '/static/icons/icon-192.png',
-  '/static/icons/icon-512.png',
-  '/static/manifest.json',
+  './',
+  './static/css/style.css',
+  './static/js/db.js',
+  './static/js/groq.js',
+  './static/js/app.js',
+  './static/icons/icon-192.png',
+  './static/icons/icon-512.png',
+  './static/manifest.json',
 ];
 
 // Install: cache app shell
@@ -25,19 +27,17 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch: network-first for API, cache-first for assets
+// Fetch: network-first for external APIs (Groq), cache-first for everything else
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Always go to network for API calls
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request).catch(() => new Response(
-      JSON.stringify({ error: 'Offline' }), { headers: { 'Content-Type': 'application/json' } }
-    )));
+  // Let external API calls (Groq) go through network directly — no caching
+  if (url.hostname !== self.location.hostname) {
+    e.respondWith(fetch(e.request));
     return;
   }
 
-  // Cache-first for static assets
+  // Cache-first for all local assets (app shell, JS, CSS, icons)
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
@@ -47,6 +47,11 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, clone));
         }
         return res;
+      }).catch(() => {
+        // If offline and not cached, return a minimal offline page for navigation requests
+        if (e.request.mode === 'navigate') {
+          return caches.match('/');
+        }
       });
     })
   );
