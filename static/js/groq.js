@@ -102,11 +102,18 @@ const Groq = {
 ${intake}
 Totals: ${cal} kcal, ${prot}g protein, ${carbs}g carbs, ${fat}g fat. Water: ${waterGlasses}/${settings.water_goal || 10} glasses.
 Goals: ~${settings.calorie_goal} kcal/day, ~${settings.protein_goal}g protein/day.
-Give 2-3 short actionable suggestions. Return ONLY valid JSON: {"suggestion": "..."}`;
+Give 2-3 short actionable suggestions as plain text sentences separated by newlines. Do NOT return JSON. Just plain text.`;
         try {
             const text = await groqChat(apiKey, prompt, 300);
-            const parsed = _parseAIJson(text);
-            return parsed.suggestion || text;
+            // Strip any accidental JSON wrapping
+            const stripped = text.trim();
+            try {
+                const parsed = JSON.parse(stripped);
+                // If AI returned JSON anyway, extract text
+                if (Array.isArray(parsed)) return parsed.map(p => p.suggestion || p).join('\n');
+                if (parsed.suggestion) return parsed.suggestion;
+            } catch (_) { /* not JSON, use as-is */ }
+            return stripped;
         } catch (e) {
             return e.message;
         }
