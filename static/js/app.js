@@ -1840,6 +1840,7 @@ async function loadSettingsTab() {
     });
     loadBMI();
     loadStreak();
+    _initPWACard();
 }
 
 async function saveSettings() {
@@ -2152,17 +2153,38 @@ async function deleteMealPlan(id) {
 // ── PWA Service Worker ────────────────────────────────────
 let _installPrompt = null;
 
+function _initPWACard() {
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    const btn = document.getElementById('pwa-install-btn');
+    const iosHint = document.getElementById('pwa-ios-hint');
+    const installedMsg = document.getElementById('pwa-installed-msg');
+    if (isStandalone) {
+        if (btn) btn.style.display = 'none';
+        if (iosHint) iosHint.style.display = 'none';
+        if (installedMsg) { installedMsg.style.display = ''; ri(); }
+    } else if (isIOS) {
+        if (btn) btn.style.display = 'none';
+        if (iosHint) { iosHint.style.display = ''; }
+    }
+    // Chrome/Android: button shown via beforeinstallprompt below
+}
+
 window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     _installPrompt = e;
-    const card = document.getElementById('pwa-install-card');
-    if (card) { card.style.display = ''; ri(); }
+    const btn = document.getElementById('pwa-install-btn');
+    if (btn) { btn.style.display = ''; ri(); }
+    const iosHint = document.getElementById('pwa-ios-hint');
+    if (iosHint) iosHint.style.display = 'none';
 });
 
 window.addEventListener('appinstalled', () => {
     _installPrompt = null;
-    const card = document.getElementById('pwa-install-card');
-    if (card) card.style.display = 'none';
+    const btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.style.display = 'none';
+    const installedMsg = document.getElementById('pwa-installed-msg');
+    if (installedMsg) { installedMsg.style.display = ''; ri(); }
     showToast('success', 'App installed!', 'NutriTrack added to your home screen.');
 });
 
