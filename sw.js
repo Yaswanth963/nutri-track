@@ -1,5 +1,5 @@
 /* NutriTrack Service Worker */
-const CACHE = 'nutritrack-v3';
+const CACHE = 'nutritrack-v4';
 const SHELL = [
   './',
   './static/css/style.css',
