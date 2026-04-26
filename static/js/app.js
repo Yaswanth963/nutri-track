@@ -2128,6 +2128,29 @@ async function deleteMealPlan(id) {
 }
 
 // ── PWA Service Worker ────────────────────────────────────
+let _installPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    _installPrompt = e;
+    const card = document.getElementById('pwa-install-card');
+    if (card) { card.style.display = ''; ri(); }
+});
+
+window.addEventListener('appinstalled', () => {
+    _installPrompt = null;
+    const card = document.getElementById('pwa-install-card');
+    if (card) card.style.display = 'none';
+    showToast('success', 'App installed!', 'NutriTrack added to your home screen.');
+});
+
+async function installPWA() {
+    if (!_installPrompt) return;
+    _installPrompt.prompt();
+    const { outcome } = await _installPrompt.userChoice;
+    if (outcome === 'accepted') _installPrompt = null;
+}
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
