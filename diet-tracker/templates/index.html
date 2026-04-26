@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>NutriTrack — AI Diet Tracker</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#ff6600">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NutriTrack">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png">
+
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.460.0/dist/umd/lucide.min.js"
+        onerror="this.onerror=null;this.src='https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js'"></script>
+</head>
+<body>
+
+<!-- ONBOARDING WIZARD -->
+<div id="onboarding" class="onboarding-overlay hidden">
+    <div class="ob-box">
+        <div class="ob-steps">
+            <div class="ob-step active" data-step="1">1</div>
+            <div class="ob-step-line"></div>
+            <div class="ob-step" data-step="2">2</div>
+            <div class="ob-step-line"></div>
+            <div class="ob-step" data-step="3">3</div>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="ob-panel active" id="ob-1">
+            <div class="ob-icon"><i data-lucide="user-circle"></i></div>
+            <h2 class="ob-title">Welcome to NutriTrack</h2>
+            <p class="ob-subtitle">Set up your profile to personalise your nutrition journey.</p>
+            <div class="ob-form">
+                <label class="ob-label">Your name</label>
+                <input type="text" id="ob-name" class="ob-input" placeholder="e.g. Yash">
+                <label class="ob-label">Age</label>
+                <input type="number" id="ob-age" class="ob-input" placeholder="e.g. 26" min="10" max="100">
+                <label class="ob-label">Gender</label>
+                <div class="ob-chips">
+                    <button class="ob-chip" data-ob-group="gender" data-val="male" onclick="obSelectChip('gender','male')">
+                        <i data-lucide="user"></i> Male
+                    </button>
+                    <button class="ob-chip" data-ob-group="gender" data-val="female" onclick="obSelectChip('gender','female')">
+                        <i data-lucide="user"></i> Female
+                    </button>
+                    <button class="ob-chip" data-ob-group="gender" data-val="other" onclick="obSelectChip('gender','other')">
+                        <i data-lucide="user"></i> Other
+                    </button>
+                </div>
+                <label class="ob-label">Diet Preference</label>
+                <div class="ob-chips">
+                    <button class="ob-chip selected" data-ob-group="diet" data-val="veg" onclick="obSelectChip('diet','veg')">
+                        🥦 Vegetarian
+                    </button>
+                    <button class="ob-chip" data-ob-group="diet" data-val="egg" onclick="obSelectChip('diet','egg')">
+                        🥚 Veg + Eggs
+                    </button>
+                    <button class="ob-chip" data-ob-group="diet" data-val="nonveg" onclick="obSelectChip('diet','nonveg')">
+                        🍗 Non-Vegetarian
+                    </button>
+                </div>
+            </div>
+            <div class="ob-nav">
+                <button class="ob-btn ob-btn-primary" onclick="obNext(1)">
+                    Continue <i data-lucide="arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="ob-panel" id="ob-2">
+            <div class="ob-icon"><i data-lucide="ruler"></i></div>
+            <h2 class="ob-title">Body Measurements</h2>
+            <p class="ob-subtitle">Used to calculate your BMI and personalise calorie targets.</p>
+            <div class="ob-form">
+                <label class="ob-label">Height (cm)</label>
+                <input type="number" id="ob-height" class="ob-input" placeholder="e.g. 175" min="50" max="250" step="0.5" oninput="updateObRecommendation()">
+                <label class="ob-label">Current Weight (kg)</label>
+                <input type="number" id="ob-weight" class="ob-input" placeholder="e.g. 72" min="20" max="300" step="0.1" oninput="updateObRecommendation()">
+            </div>
+            <div class="ob-nav">
+                <button class="ob-btn ob-btn-secondary" onclick="setObStep(1)"><i data-lucide="arrow-left"></i> Back</button>
+                <button class="ob-btn ob-btn-primary" onclick="obNext(2)">Continue <i data-lucide="arrow-right"></i></button>
+            </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="ob-panel" id="ob-3">
+            <div class="ob-icon"><i data-lucide="target"></i></div>
+            <h2 class="ob-title">Your Goals</h2>
+            <p class="ob-subtitle">We'll calculate personalised daily targets based on your lifestyle.</p>
+            <div class="ob-form">
+                <label class="ob-label">Activity Level</label>
+                <div class="ob-activity-grid">
+                    <button class="ob-chip ob-chip-card" data-ob-group="activity" data-val="sedentary" onclick="obSelectChip('activity','sedentary')">
+                        <i data-lucide="monitor"></i>
+                        <div class="ob-chip-text"><span>Sedentary</span><small>desk job, no exercise</small></div>
+                    </button>
+                    <button class="ob-chip ob-chip-card" data-ob-group="activity" data-val="light" onclick="obSelectChip('activity','light')">
+                        <i data-lucide="move"></i>
+                        <div class="ob-chip-text"><span>Light</span><small>1–3 days/week</small></div>
+                    </button>
+                    <button class="ob-chip ob-chip-card selected" data-ob-group="activity" data-val="moderate" onclick="obSelectChip('activity','moderate')">
+                        <i data-lucide="bicycle"></i>
+                        <div class="ob-chip-text"><span>Moderate</span><small>3–5 days/week</small></div>
+                    </button>
+                    <button class="ob-chip ob-chip-card" data-ob-group="activity" data-val="active" onclick="obSelectChip('activity','active')">
+                        <i data-lucide="dumbbell"></i>
+                        <div class="ob-chip-text"><span>Active</span><small>6–7 days/week</small></div>
+                    </button>
+                    <button class="ob-chip ob-chip-card ob-chip-card-full" data-ob-group="activity" data-val="very_active" onclick="obSelectChip('activity','very_active')">
+                        <i data-lucide="zap"></i>
+                        <div class="ob-chip-text"><span>Very Active</span><small>athlete / physical job</small></div>
+                    </button>
+                </div>
+                <hr class="section-divider">
+                <label class="ob-label">Primary Goal</label>
+                <div class="ob-chips">
+                    <button class="ob-chip" data-ob-group="goal" data-val="lose" onclick="obSelectChip('goal','lose')">
+                        <i data-lucide="trending-down"></i> Lose Weight
+                    </button>
+                    <button class="ob-chip selected" data-ob-group="goal" data-val="maintain" onclick="obSelectChip('goal','maintain')">
+                        <i data-lucide="minus"></i> Maintain
+                    </button>
+                    <button class="ob-chip" data-ob-group="goal" data-val="gain" onclick="obSelectChip('goal','gain')">
+                        <i data-lucide="trending-up"></i> Gain Muscle
+                    </button>
+                </div>
+                <hr class="section-divider">
+                <div class="ob-recommendation" id="ob-recommendation">Fill in measurements above to see recommendations.</div>
+                <hr class="section-divider">
+                <div class="ob-override-row">
+                    <div>
+                        <label class="ob-label">Cal goal (optional)</label>
+                        <input type="number" id="ob-cal-override" class="ob-input" placeholder="Auto" min="800">
+                    </div>
+                    <div>
+                        <label class="ob-label">Protein goal (optional)</label>
+                        <input type="number" id="ob-protein-override" class="ob-input" placeholder="Auto" min="20">
+                    </div>
+                </div>
+            </div>
+            <div class="ob-nav">
+                <button class="ob-btn ob-btn-secondary" onclick="setObStep(2)"><i data-lucide="arrow-left"></i> Back</button>
+                <button class="ob-btn ob-btn-primary" onclick="obFinish()"><i data-lucide="check-circle"></i> Let's Go!</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toast-container"></div>
+
+<!-- CONFIRM DIALOG -->
+<div class="dialog-backdrop" id="dialog-backdrop">
+    <div class="dialog-box">
+        <div class="dialog-icon" id="dlg-icon"><i data-lucide="trash-2"></i></div>
+        <div class="dialog-title" id="dlg-title">Are you sure?</div>
+        <div class="dialog-msg" id="dlg-msg">This action cannot be undone.</div>
+        <div class="dialog-btns">
+            <button class="dialog-btn dialog-btn-cancel" onclick="_dlgResolve(false)">Cancel</button>
+            <button class="dialog-btn dialog-btn-confirm" id="dlg-confirm-btn" onclick="_dlgResolve(true)">Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- MAIN APP -->
+<div class="container">
+
+    <header>
+        <div class="header-top">
+            <div class="header-brand">
+                <svg class="app-logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Background: deep orange-to-amber gradient -->
+                    <rect width="40" height="40" rx="10" fill="url(#nt-bg)"/>
+                    <!-- FIRE: bold white flame — metabolism, calorie burn, passion -->
+                    <path d="M20 5 C13 10 9 17 11 24 C12.5 29 16 32.5 20 34 C24 32.5 27.5 29 29 24 C31 17 27 10 20 5Z"
+                          fill="white" opacity="0.93"/>
+                    <!-- MUSCLE: lightning bolt inside flame — strength, power, muscle energy -->
+                    <path d="M22 13 L16 23.5 L21 23.5 L18 31 L25.5 20 L21.5 20 Z"
+                          fill="url(#nt-bolt)"/>
+
+                    <defs>
+                        <linearGradient id="nt-bg" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#ff5500"/><stop offset="1" stop-color="#ffaa00"/>
+                        </linearGradient>
+                        <linearGradient id="nt-bolt" x1="20" y1="13" x2="20" y2="31" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#ff6600"/><stop offset="1" stop-color="#cc2200"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div>
+                    <div class="header-title">NutriTrack</div>
+                    <div class="header-subtitle">AI-powered diet tracker</div>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">
+                    <i data-lucide="moon"></i>
+                </button>
+            </div>
+        </div>
+        <div class="header-stats">
+            <div class="streak-badge">
+                <i data-lucide="flame" style="width:16px;height:16px;stroke:var(--primary)"></i>
+                <span id="streak-val">0 days</span>
+            </div>
+            <span class="header-greeting" id="header-greeting">Welcome!</span>
+        </div>
+    </header>
+
+    <!-- Food Search -->
+    <div class="search-wrap">
+        <div class="search-row">
+            <div class="search-input-wrap">
+                <input type="text" class="search-input" id="search-input"
+                    placeholder="Search food calories... e.g. samosa, biryani"
+                    oninput="onSearchInput()"
+                    onkeydown="if(event.key==='Enter') searchFood(); else if(event.key==='Escape') clearSearch()">
+                <button class="search-clear-btn" id="search-clear" onclick="clearSearch()" style="display:none" title="Clear">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <button class="search-btn" id="search-btn" onclick="searchFood()">
+                <i data-lucide="search"></i>
+            </button>
+        </div>
+        <div class="search-loading" id="search-loading">
+            <div class="spinner"></div> Looking up nutrition...
+        </div>
+        <div class="search-result" id="search-result"></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="tabs-scroll">
+        <button class="tab active" data-tab="track"><i data-lucide="activity"></i>Track</button>
+        <button class="tab" data-tab="today"><i data-lucide="list"></i>Today</button>
+        <button class="tab" data-tab="plan"><i data-lucide="calendar"></i>Plan</button>
+        <button class="tab" data-tab="cook"><i data-lucide="chef-hat"></i>Cook</button>
+        <button class="tab" data-tab="shop"><i data-lucide="shopping-cart"></i>Shop</button>
+        <button class="tab" data-tab="spend"><i data-lucide="wallet"></i>Spend</button>
+        <button class="tab" data-tab="weight"><i data-lucide="scale"></i>Weight</button>
+        <button class="tab" data-tab="history"><i data-lucide="bar-chart-2"></i>History</button>
+        <button class="tab" data-tab="settings"><i data-lucide="settings"></i>More</button>
+    </div>
+
+    <!-- TRACK TAB -->
+    <div id="tab-track" class="tab-content active">
+
+        <!-- Date strip + jump-to-date picker -->
+        <div class="track-strip-row">
+            <div class="track-date-strip" id="track-date-strip"></div>
+            <div class="track-date-jump" title="Jump to any date">
+                <label for="track-date-picker"><i data-lucide="calendar-search"></i></label>
+                <input type="date" id="track-date-picker" onchange="jumpToDate(this.value)">
+            </div>
+        </div>
+
+        <!-- Past day read-only banner -->
+        <div class="track-past-banner" id="track-past-banner" style="display:none">
+            <i data-lucide="calendar" style="width:14px;height:14px"></i>
+            Viewing <strong id="track-past-label"></strong>
+            <button class="btn-edit-past" id="btn-edit-past" onclick="togglePastEdit()">
+                <i data-lucide="pencil" style="width:12px;height:12px"></i> Edit
+            </button>
+        </div>
+
+        <div class="card">
+            <h2><i data-lucide="pie-chart" class="icon-md"></i> <span id="track-progress-title">Today's Progress</span></h2>
+            <div class="macro-grid">
+                <div class="macro-item"><div class="value" id="total-cal">0</div><div class="label">kcal</div></div>
+                <div class="macro-item"><div class="value" id="total-protein">0g</div><div class="label">protein</div></div>
+                <div class="macro-item"><div class="value" id="total-carbs">0g</div><div class="label">carbs</div></div>
+                <div class="macro-item"><div class="value" id="total-fat">0g</div><div class="label">fat</div></div>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="cal-progress" style="width:0%"></div></div>
+            <div class="progress-label"><span id="lbl-cal">0 kcal</span><span id="lbl-cal-goal">Target: 2100 kcal</span></div>
+            <div class="remaining-label"><span id="lbl-cal-remaining" class="remaining-ok">2100 kcal remaining</span></div>
+            <div class="progress-bar" style="margin-top:6px"><div class="progress-fill" id="protein-progress" style="width:0%"></div></div>
+            <div class="progress-label"><span id="lbl-protein">0g protein</span><span id="lbl-protein-goal">Target: 90g</span></div>
+            <div class="remaining-label"><span id="lbl-protein-remaining" class="remaining-ok">90g remaining</span></div>
+            <div class="progress-bar" style="margin-top:6px"><div class="progress-fill progress-fill-carbs" id="carbs-progress" style="width:0%"></div></div>
+            <div class="progress-label"><span id="lbl-carbs">0g carbs</span><span id="lbl-carbs-goal">Target: 250g</span></div>
+            <div class="remaining-label"><span id="lbl-carbs-remaining" class="remaining-ok">250g remaining</span></div>
+            <div class="progress-bar" style="margin-top:6px"><div class="progress-fill progress-fill-fat" id="fat-progress" style="width:0%"></div></div>
+            <div class="progress-label"><span id="lbl-fat-prog">0g fat</span><span id="lbl-fat-goal">Target: 65g</span></div>
+            <div class="remaining-label"><span id="lbl-fat-remaining" class="remaining-ok">65g remaining</span></div>
+        </div>
+
+        <div class="card water-card">
+            <h2><i data-lucide="droplets" class="icon-md"></i> Water Intake
+                <span class="water-count-badge">
+                    <span id="water-count">0</span><span class="water-count-sep">/</span><span id="water-goal-lbl">10</span>
+                    <span class="water-count-unit">glasses</span>
+                </span>
+            </h2>
+            <div class="water-glasses" id="water-display"></div>
+            <div class="water-actions">
+                <button class="water-log-btn" onclick="logWater()">
+                    <i data-lucide="droplets"></i> Log a glass
+                </button>
+                <button class="water-reset-btn" onclick="resetWater()">
+                    <i data-lucide="rotate-ccw"></i> Reset
+                </button>
+            </div>
+            <div class="water-reminder" id="water-reminder">
+                <i data-lucide="bell" style="width:14px;height:14px;stroke:var(--primary)"></i>
+                Time to drink water! Stay hydrated.
+            </div>
+        </div>
+
+        <!-- TODAY'S PLAN — shown dynamically -->
+        <div id="today-plan-card" class="card today-plan-card" style="display:none">
+            <h2>
+                <i data-lucide="calendar-check" class="icon-md"></i> Today's Plan
+                <button class="today-plan-dismiss" onclick="dismissTodayPlan()" title="Hide for today">
+                    <i data-lucide="x"></i>
+                </button>
+            </h2>
+            <div id="today-plan-list"></div>
+        </div>
+
+        <!-- What you ate this day -->
+        <div class="card">
+            <h2><i data-lucide="utensils" class="icon-md"></i> <span id="track-meals-title">Today's Meals</span></h2>
+            <ul class="food-list" id="track-food-list"></ul>
+            <p id="track-no-food" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:16px 0">Nothing logged yet.</p>
+        </div>
+
+        <div class="card" id="track-log-card">
+            <h2><i data-lucide="plus-circle" class="icon-md"></i> Log Food <span class="ai-badge">AI</span></h2>
+            <form class="log-form" id="food-form" onsubmit="return logFood(event)">
+                <select name="meal_type" id="meal-type">
+                    <option value="morning">Morning</option>
+                    <option value="breakfast">Breakfast</option>
+                    <option value="lunch">Lunch</option>
+                    <option value="snack" selected>Snack</option>
+                    <option value="post-gym">Post Gym</option>
+                    <option value="dinner">Dinner</option>
+                </select>
+                <div class="input-mic-wrap">
+                    <input type="text" name="description" id="food-desc"
+                        placeholder="What did you eat? e.g. 2 roti + dal + soya" oninput="refreshLogBtn()">
+                    <button type="button" class="mic-btn" id="mic-btn" onclick="toggleMic()">
+                        <i data-lucide="mic"></i>
+                    </button>
+                </div>
+                <button type="button" class="photo-toggle" id="photo-toggle" onclick="togglePhotoSection()">
+                    <i data-lucide="image"></i> Add photo <span style="opacity:0.6;font-weight:400">(optional)</span>
+                </button>
+                <div class="photo-section" id="photo-section">
+                <div class="capture-toggle">
+                    <button type="button" class="capture-btn active" id="btn-mode-file" onclick="setMode('file')">
+                        <i data-lucide="upload-cloud"></i> Upload
+                    </button>
+                    <button type="button" class="capture-btn" id="btn-mode-cam" onclick="setMode('cam')">
+                        <i data-lucide="camera"></i> Camera
+                    </button>
+                </div>
+                <div class="file-upload" id="file-drop">
+                    <div class="upload-icon"><i data-lucide="image"></i></div>
+                    <p>Tap to upload a food photo</p>
+                    <input type="file" name="image" id="food-image" accept="image/*" onchange="previewImage(this)">
+                </div>
+                <div class="camera-wrap" id="camera-wrap">
+                    <video id="cam-video" autoplay playsinline muted></video>
+                    <canvas id="cam-canvas"></canvas>
+                </div>
+                <div class="cam-controls" id="cam-controls" style="display:none">
+                    <button type="button" id="cam-snap" onclick="snapPhoto()">
+                        <i data-lucide="camera"></i> Capture
+                    </button>
+                    <button type="button" id="cam-stop" onclick="stopCamera()">
+                        <i data-lucide="x"></i> Stop
+                    </button>
+                </div>
+                <div class="preview-wrap" id="preview-wrap">
+                    <img class="preview-img" id="img-preview" alt="Food preview">
+                    <button type="button" class="retake-btn" onclick="retakeImage()">
+                        <i data-lucide="refresh-cw"></i> Retake
+                    </button>
+                </div>
+                </div>
+                <div class="loading" id="loading"><div class="spinner"></div> Analysing with AI...</div>
+                <button type="submit" class="btn btn-primary" id="log-btn" disabled style="opacity:0.4;cursor:not-allowed">
+                    <i data-lucide="check"></i> Log Food
+                </button>
+            </form>
+            <div id="log-result-card" style="display:none;margin-top:12px;padding:14px;background:var(--macro-bg);border:1px solid var(--card-border);border-radius:10px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                    <strong id="lrc-name" style="color:var(--primary);font-size:0.9rem;display:flex;align-items:center;gap:5px">
+                        <i data-lucide="check-circle" style="width:15px;height:15px;stroke:var(--success)"></i>
+                    </strong>
+                    <button onclick="document.getElementById('log-result-card').style.display='none'"
+                        style="background:none;border:none;cursor:pointer;display:flex;align-items:center;color:var(--muted)">
+                        <i data-lucide="x" style="width:15px;height:15px;stroke:var(--muted)"></i>
+                    </button>
+                </div>
+                <div class="search-macro-grid">
+                    <div class="search-macro"><div class="sv" id="lrc-cal"></div><div class="sl">kcal</div></div>
+                    <div class="search-macro"><div class="sv" id="lrc-p"></div><div class="sl">protein</div></div>
+                    <div class="search-macro"><div class="sv" id="lrc-c"></div><div class="sl">carbs</div></div>
+                    <div class="search-macro"><div class="sv" id="lrc-f"></div><div class="sl">fat</div></div>
+                </div>
+                <div id="lrc-tip" style="font-size:0.78rem;color:var(--muted);margin-top:8px"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2><i data-lucide="lightbulb" class="icon-md"></i> AI Suggestion
+                <button class="btn-icon sug-refresh" onclick="getSuggestion()" title="Refresh suggestion"
+                    style="margin-left:auto;padding:4px 8px;border:1px solid var(--card-border);border-radius:7px">
+                    <i data-lucide="refresh-cw" style="width:13px;height:13px;stroke:var(--muted)"></i>
+                </button>
+            </h2>
+            <div class="suggestion" id="suggestion">
+                <div class="sug-single" style="color:var(--muted)">Log some meals to get personalised suggestions!</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TODAY TAB -->
+    <div id="tab-today" class="tab-content">
+        <div class="card">
+            <h2><i data-lucide="list" class="icon-md"></i> Today's Meals</h2>
+            <ul class="food-list" id="food-list"></ul>
+            <p id="no-food" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:20px">No food logged yet today.</p>
+        </div>
+
+        <!-- Nutrition Gaps -->
+        <div class="card" id="nutrition-gaps-card">
+            <div class="gap-header">
+                <div>
+                    <h2><i data-lucide="microscope" class="icon-md"></i> Nutrition Gaps</h2>
+                    <div class="gap-subtitle" id="gap-summary">Log meals to see your nutrition analysis.</div>
+                </div>
+                <button class="suggest-refresh-btn" onclick="loadNutritionGaps()" id="gaps-btn" title="Analyse">
+                    <i data-lucide="test-tube-2"></i> Analyse
+                </button>
+            </div>
+            <div id="gaps-loading" style="display:none" class="sug-loading"><div class="spinner"></div> Analysing nutrients…</div>
+            <div id="gaps-grid" class="gaps-grid"></div>
+        </div>
+
+        <!-- Meal Swap Suggestions -->
+        <div class="card" id="meal-swap-card">
+            <div class="gap-header">
+                <div>
+                    <h2><i data-lucide="shuffle" class="icon-md"></i> Meal Swaps</h2>
+                    <div class="gap-subtitle">AI-powered improvements for today's diet.</div>
+                </div>
+                <button class="suggest-refresh-btn" onclick="loadMealSwaps()" id="swap-btn" title="Get swaps">
+                    <i data-lucide="wand-2"></i> Suggest
+                </button>
+            </div>
+            <div id="swap-loading" style="display:none" class="sug-loading"><div class="spinner"></div> Thinking…</div>
+            <div id="swap-list"></div>
+        </div>
+    </div>
+
+    <!-- SPEND TAB -->
+    <div id="tab-spend" class="tab-content">
+
+        <!-- Summary strip -->
+        <div class="spend-summary-row" id="spend-summary-row">
+            <div class="spend-stat spend-stat-debit">
+                <div class="spend-stat-val" id="ss-debit">₹0</div>
+                <div class="spend-stat-lbl">Total Spent</div>
+            </div>
+            <div class="spend-stat spend-stat-net">
+                <div class="spend-stat-val" id="ss-count">0</div>
+                <div class="spend-stat-lbl">Entries</div>
+            </div>
+        </div>
+
+        <!-- Filter & Search -->
+        <div class="card spend-filter-card">
+            <div class="spend-filter-row">
+                <div class="spend-filter-field">
+                    <label class="spend-filter-label">Month</label>
+                    <input type="month" id="spend-month-filter" class="themed-input">
+                </div>
+                <div class="spend-filter-field">
+                    <label class="spend-filter-label">Category</label>
+                    <select id="spend-cat-filter" class="themed-input">
+                        <option value="">All</option>
+                        <option value="Food">Food</option>
+                        <option value="Groceries">Groceries</option>
+                        <option value="Restaurant">Restaurant</option>
+                        <option value="Snacks">Snacks</option>
+                        <option value="Supplements">Supplements</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Movies">Movies</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Health">Health</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Rent">Rent</option>
+                        <option value="Education">Education</option>
+                        <option value="Travel">Travel</option>
+                        <option value="Fuel">Fuel</option>
+                        <option value="Subscriptions">Subscriptions</option>
+                        <option value="Gifts">Gifts</option>
+                        <option value="Personal Care">Personal Care</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="spend-search-row">
+                <div class="spend-search-wrap">
+                    <i data-lucide="search" class="spend-search-icon"></i>
+                    <input type="text" id="spend-search" class="themed-input spend-search-input" placeholder="Search description or note…">
+                </div>
+                <button class="btn btn-primary spend-add-btn" onclick="openExpenseModal()">
+                    <i data-lucide="plus"></i> Add
+                </button>
+                <a id="spend-export-btn" class="spend-export-btn" href="#" onclick="exportExpenses(event)">
+                    <i data-lucide="download"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Category breakdown -->
+        <div class="card" id="spend-cat-card" style="display:none">
+            <h2><i data-lucide="pie-chart" class="icon-md"></i> By Category</h2>
+            <div id="spend-cat-bars"></div>
+        </div>
+
+        <!-- Expense list -->
+        <div class="card">
+            <div id="spend-list"></div>
+            <p id="spend-empty" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:20px">No expenses found. Tap + Add to log one.</p>
+        </div>
+    </div>
+
+    <!-- EXPENSE MODAL -->
+    <div id="expense-modal-backdrop" class="modal-backdrop" style="display:none" onclick="closeExpenseModal(event)">
+        <div class="modal-box" id="expense-modal-box">
+            <div class="modal-header">
+                <h3 id="expense-modal-title">Add Expense</h3>
+                <button class="modal-close-btn" onclick="closeExpenseModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="expense-edit-id">
+                <div class="exp-form-grid">
+                    <div class="exp-field exp-field-full">
+                        <label class="ob-label">Description *</label>
+                        <input type="text" id="exp-desc" class="ob-input" placeholder="e.g. Lunch at mess, Amul milk">
+                    </div>
+                    <div class="exp-field">
+                        <label class="ob-label">Amount (₹) *</label>
+                        <input type="number" id="exp-amount" class="ob-input" placeholder="0.00" min="0" step="0.01">
+                    </div>
+                    <div class="exp-field">
+                        <label class="ob-label">Date</label>
+                        <input type="date" id="exp-date" class="ob-input">
+                    </div>
+                    <div class="exp-field">
+                        <label class="ob-label">Category</label>
+                        <select id="exp-cat" class="ob-input">
+                            <option value="Food">Food</option>
+                            <option value="Groceries">Groceries</option>
+                            <option value="Restaurant">Restaurant</option>
+                            <option value="Snacks">Snacks</option>
+                            <option value="Supplements">Supplements</option>
+                            <option value="Transport">Transport</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Movies">Movies</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Health">Health</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Rent">Rent</option>
+                            <option value="Education">Education</option>
+                            <option value="Travel">Travel</option>
+                            <option value="Fuel">Fuel</option>
+                            <option value="Subscriptions">Subscriptions</option>
+                            <option value="Gifts">Gifts</option>
+                            <option value="Personal Care">Personal Care</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="exp-field">
+                        <label class="ob-label">Payment Method</label>
+                        <select id="exp-pay" class="ob-input">
+                            <option value="UPI">UPI</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Card">Card</option>
+                            <option value="NetBanking">NetBanking</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="exp-field exp-field-full">
+                        <label class="ob-label">Note (optional)</label>
+                        <input type="text" id="exp-note" class="ob-input" placeholder="Any extra detail…">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="ob-btn ob-btn-secondary" onclick="closeExpenseModal()">Cancel</button>
+                <button class="ob-btn ob-btn-primary" onclick="saveExpense()">
+                    <i data-lucide="save"></i> <span id="exp-save-label">Save</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WEIGHT TAB -->
+    <div id="tab-weight" class="tab-content">
+        <div class="card">
+            <h2><i data-lucide="trending-up" class="icon-md"></i> Weight Trend</h2>
+            <div class="weight-stats">
+                <div class="weight-stat"><div class="val" id="w-current">--</div><div class="lbl">Current kg</div></div>
+                <div class="weight-stat"><div class="val" id="w-start">--</div><div class="lbl">Starting kg</div></div>
+                <div class="weight-stat"><div class="val" id="w-change">--</div><div class="lbl">Change</div></div>
+                <div class="weight-stat"><div class="val" id="w-target">--</div><div class="lbl">Goal kg</div></div>
+            </div>
+            <div id="w-goal-banner" class="w-goal-banner" style="display:none"></div>
+            <div class="weight-chart" id="weight-chart"></div>
+        </div>
+        <div class="card">
+            <h2><i data-lucide="scale" class="icon-md"></i> Log Weight</h2>
+            <div class="log-form">
+                <input type="date" id="weight-date" class="themed-input">
+                <div style="display:flex;gap:8px">
+                    <input type="number" id="weight-kg" step="0.1" min="20" max="300" placeholder="Weight in kg (e.g. 72.5)" class="themed-input" style="flex:1">
+                    <button class="btn btn-primary" style="width:auto;padding:10px 18px" onclick="logWeight()">
+                        <i data-lucide="save"></i>
+                    </button>
+                </div>
+                <input type="text" id="weight-note" placeholder="Note (optional)" class="themed-input">
+            </div>
+        </div>
+        <div class="card">
+            <h2><i data-lucide="clock" class="icon-md"></i> Weight History</h2>
+            <ul class="weight-list" id="weight-list"></ul>
+            <p id="no-weight" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:16px">No weight logged yet.</p>
+        </div>
+    </div>
+
+    <!-- HISTORY TAB -->
+    <div id="tab-history" class="tab-content">
+        <div class="card" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px">
+            <h2 style="margin:0;display:flex;align-items:center;gap:6px">
+                <i data-lucide="bar-chart-2" class="icon-md"></i> Past 30 Days
+            </h2>
+            <button class="btn btn-primary" style="width:auto;padding:8px 14px;font-size:0.8rem" onclick="exportCSV()">
+                <i data-lucide="download"></i> Export CSV
+            </button>
+        </div>
+        <!-- Calorie Trend Chart -->
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h2 style="margin:0"><i data-lucide="trending-up" class="icon-md"></i> Calorie Trend</h2>
+                <div style="display:flex;gap:6px">
+                    <button class="trend-range-btn active" data-days="7" onclick="setTrendRange(7)">7d</button>
+                    <button class="trend-range-btn" data-days="14" onclick="setTrendRange(14)">14d</button>
+                    <button class="trend-range-btn" data-days="30" onclick="setTrendRange(30)">30d</button>
+                </div>
+            </div>
+            <div class="trend-legend">
+                <span class="trend-legend-dot" style="background:var(--primary)"></span> Daily
+                <span class="trend-legend-dot" style="background:#6366f1;margin-left:10px"></span> 7-day avg
+                <span class="trend-legend-dot trend-legend-dashed" style="border-color:var(--success)"></span> Goal
+            </div>
+            <div class="calorie-trend-chart" id="calorie-trend-chart"></div>
+            <div class="trend-stats" id="trend-stats"></div>
+        </div>
+        <div class="card">
+            <div id="history-list"></div>
+            <p id="no-history" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:20px">No history yet.</p>
+        </div>
+    </div>
+
+    <!-- PLAN TAB -->
+    <div id="tab-plan" class="tab-content">
+
+        <!-- Sticky date + meal type bar -->
+        <div class="plan-bar">
+            <input type="date" id="plan-date" class="themed-input plan-bar-date">
+            <select id="plan-meal-type" class="themed-input plan-bar-meal" onchange="clearSuggestions()">
+                <option value="morning">☀️ Morning</option>
+                <option value="breakfast">🥣 Breakfast</option>
+                <option value="lunch" selected>🍱 Lunch</option>
+                <option value="snack">🍎 Snack</option>
+                <option value="dinner">🌙 Dinner</option>
+            </select>
+        </div>
+
+        <!-- AI Suggestions Card -->
+        <div class="card" id="plan-suggest-card">
+            <div class="plan-suggest-header">
+                <div>
+                    <h2><i data-lucide="sparkles" class="icon-md"></i> AI Meal Suggestions</h2>
+                    <div class="plan-diet-chips">
+                        <button class="plan-diet-chip" data-plan-diet="veg" onclick="setPlanDiet('veg')">🥦 Veg</button>
+                        <button class="plan-diet-chip" data-plan-diet="egg" onclick="setPlanDiet('egg')">🥚 Veg + Eggs</button>
+                        <button class="plan-diet-chip" data-plan-diet="nonveg" onclick="setPlanDiet('nonveg')">🍗 Non-Veg</button>
+                    </div>
+                </div>
+                <button class="suggest-refresh-btn" id="suggest-load-btn" onclick="loadFoodSuggestions()" title="Get suggestions">
+                    <i data-lucide="wand-2"></i> Get Ideas
+                </button>
+            </div>
+            <div id="food-suggest-loading" style="display:none" class="sug-loading">
+                <div class="spinner"></div> Finding meals for you…
+            </div>
+            <div id="food-suggest-grid" class="food-suggest-grid"></div>
+            <div id="more-suggest-wrap" style="display:none;margin-top:10px;text-align:center">
+                <button class="suggest-more-btn" onclick="loadFoodSuggestions()">
+                    <i data-lucide="refresh-cw"></i> More Suggestions
+                </button>
+            </div>
+            <!-- Portion picker panel (shown inline below selected card) -->
+            <div id="portion-picker" class="portion-picker" style="display:none"></div>
+        </div>
+
+        <!-- Manual Add (collapsible) -->
+        <details class="card plan-manual-details">
+            <summary>
+                <i data-lucide="pencil" style="width:16px;height:16px;stroke:var(--primary)"></i>
+                Add Custom Meal
+                <i data-lucide="chevron-down" class="plan-manual-chevron"></i>
+            </summary>
+            <div class="log-form" style="margin-top:12px">
+                <input type="text" id="plan-desc" placeholder="e.g. dal rice + curd + salad" class="themed-input">
+                <input type="text" id="plan-qty" placeholder="Quantity, e.g. 1 medium bowl, 250g, 2 pieces" class="themed-input">
+                <input type="number" id="plan-cal" placeholder="Estimated calories (optional)" class="themed-input" min="0">
+                <button class="btn btn-primary" onclick="addMealPlan()">
+                    <i data-lucide="plus"></i> Add to Plan
+                </button>
+            </div>
+        </details>
+
+        <!-- Weekly Calendar -->
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                <h2 style="margin:0"><i data-lucide="calendar" class="icon-md"></i> Weekly Planner</h2>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+                <button onclick="shiftPlanWeek(-1)" class="plan-week-nav-btn">
+                    <i data-lucide="chevron-left" style="width:16px;height:16px;stroke:var(--text)"></i>
+                </button>
+                <span id="plan-week-label" style="flex:1;text-align:center;font-size:0.85rem;color:var(--muted);font-weight:500"></span>
+                <button onclick="shiftPlanWeek(1)" class="plan-week-nav-btn">
+                    <i data-lucide="chevron-right" style="width:16px;height:16px;stroke:var(--text)"></i>
+                </button>
+            </div>
+            <div id="plan-calendar" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+
+    </div>
+
+    <!-- COOK TAB -->
+    <div id="tab-cook" class="tab-content">
+        <div class="card">
+            <h2><i data-lucide="chef-hat" class="icon-md"></i> Recipe Generator</h2>
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:12px">Enter any dish name and get ingredients, costs, and step-by-step instructions.</p>
+            <div class="recipe-search-row">
+                <div class="recipe-input-wrap">
+                    <input type="text" id="recipe-dish-input" class="themed-input" placeholder="e.g. Vegetable Biryani, Paneer Butter Masala…" style="flex:1">
+                    <button class="recipe-mic-btn" id="recipe-mic-btn" onclick="toggleVoiceInput()" title="Speak dish name">
+                        <i data-lucide="mic" id="recipe-mic-icon"></i>
+                    </button>
+                </div>
+                <div class="recipe-serv-wrap">
+                    <label class="recipe-serv-label">Servings</label>
+                    <select id="recipe-servings" class="themed-input recipe-serv-select">
+                        <option value="1">1</option>
+                        <option value="2" selected>2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="6">6</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary recipe-gen-btn" onclick="generateRecipe()">
+                    <i data-lucide="sparkles"></i> Generate
+                </button>
+            </div>
+        </div>
+
+        <div id="recipe-loading" class="recipe-loading" style="display:none">
+            <div class="recipe-spinner"></div>
+            <span>Generating recipe…</span>
+        </div>
+
+        <div id="recipe-result" style="display:none"></div>
+    </div>
+
+    <!-- SHOP TAB -->
+    <div id="tab-shop" class="tab-content">
+        <!-- Add item card -->
+        <div class="card">
+            <h2><i data-lucide="shopping-cart" class="icon-md"></i> Buy List</h2>
+            <div class="shop-add-form">
+                <input type="text" id="shop-add-name" class="themed-input" placeholder="What do you need? e.g. Whey protein, Amul curd"
+                    onkeydown="if(event.key==='Enter') addShopItem()">
+                <div class="shop-add-row">
+                    <input type="text" id="shop-add-qty" class="themed-input" placeholder="Qty (optional, e.g. 1kg, 2 packs)">
+                    <select id="shop-add-cat" class="themed-input">
+                        <option value="Grocery">🛒 Grocery</option>
+                        <option value="Snacks">🍿 Snacks</option>
+                        <option value="Dairy">🥛 Dairy</option>
+                        <option value="Produce">🥦 Produce</option>
+                        <option value="Supplements">💊 Supplements</option>
+                        <option value="Other">📦 Other</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="addShopItem()">
+                    <i data-lucide="plus"></i> Add to List
+                </button>
+            </div>
+        </div>
+        <!-- List card -->
+        <div class="card" id="shop-list-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <span id="shop-count-label" style="font-size:0.82rem;color:var(--muted);font-weight:500"></span>
+                <button class="shop-clear-btn" onclick="clearCheckedShopItems()" id="shop-clear-btn" style="display:none">
+                    <i data-lucide="trash-2"></i> Remove checked
+                </button>
+            </div>
+            <div id="shop-loading" style="display:none" class="sug-loading"><div class="spinner"></div></div>
+            <div id="shop-empty" style="text-align:center;color:var(--muted);font-size:0.85rem;padding:24px 0">
+                <i data-lucide="shopping-cart" style="width:32px;height:32px;stroke:var(--muted);display:block;margin:0 auto 10px"></i>
+                Your buy list is empty. Add items above.
+            </div>
+            <div id="shop-content"></div>
+        </div>
+    </div>
+
+    <!-- SETTINGS TAB -->
+    <div id="tab-settings" class="tab-content">
+        <div class="card">
+            <h2><i data-lucide="user" class="icon-md"></i> Profile</h2>
+            <div class="profile-card">
+                <div class="profile-avatar"><i data-lucide="user"></i></div>
+                <div class="profile-info">
+                    <div class="profile-name" id="profile-name-display">Not set</div>
+                    <div class="profile-meta" id="profile-meta-display">Complete onboarding to set profile</div>
+                </div>
+                <button class="profile-edit-btn" onclick="showOnboarding()">
+                    <i data-lucide="edit-2"></i> Edit
+                </button>
+            </div>
+        </div>
+        <div class="card">
+            <h2><i data-lucide="target" class="icon-md"></i> Daily Goals</h2>
+            <div class="log-form">
+                <label>Calorie Goal (kcal/day)</label>
+                <input type="number" id="set-cal" placeholder="2100" min="500" max="6000" class="themed-input">
+                <label>Protein Goal (g/day)</label>
+                <input type="number" id="set-protein" placeholder="90" min="10" max="400" class="themed-input">
+                <label>Carbs Goal (g/day)</label>
+                <input type="number" id="set-carbs" placeholder="250" min="10" max="700" class="themed-input">
+                <label>Fat Goal (g/day)</label>
+                <input type="number" id="set-fat" placeholder="65" min="5" max="300" class="themed-input">
+                <label>Target Weight (kg)</label>
+                <input type="number" id="set-target-weight" placeholder="e.g. 68" min="20" max="300" step="0.1" class="themed-input">
+                <label>Water Goal (glasses/day)</label>
+                <input type="number" id="set-water" placeholder="10" min="1" max="20" class="themed-input">
+                <label>Height (cm)</label>
+                <input type="number" id="set-height" placeholder="170" min="50" max="250" step="0.5" class="themed-input">
+                <label>Diet Preference</label>
+                <div class="ob-chips" style="margin-top:4px">
+                    <button class="ob-chip" data-settings-diet="veg" onclick="setSettingsDiet('veg')">🥦 Vegetarian</button>
+                    <button class="ob-chip" data-settings-diet="egg" onclick="setSettingsDiet('egg')">🥚 Veg + Eggs</button>
+                    <button class="ob-chip" data-settings-diet="nonveg" onclick="setSettingsDiet('nonveg')">🍗 Non-Veg</button>
+                </div>
+                <button class="btn btn-primary" onclick="saveSettings()">
+                    <i data-lucide="save"></i> Save Goals
+                </button>
+            </div>
+        </div>
+        <div class="card">
+            <h2><i data-lucide="activity" class="icon-md"></i> BMI Calculator</h2>
+            <div style="text-align:center;padding:16px 0">
+                <div id="bmi-value" style="font-size:2.8rem;font-weight:800;color:var(--primary)">--</div>
+                <div id="bmi-category" style="font-size:1rem;color:var(--muted);margin-top:4px;font-weight:600"></div>
+                <div id="bmi-detail" style="font-size:0.78rem;color:var(--muted);margin-top:8px"></div>
+            </div>
+        </div>
+        <div class="card">
+            <h2><i data-lucide="flame" class="icon-md"></i> Streak Tracker</h2>
+            <div style="display:flex;gap:16px;margin-top:8px">
+                <div class="weight-stat" style="flex:1"><div class="val" id="streak-current">0</div><div class="lbl">Current Streak</div></div>
+                <div class="weight-stat" style="flex:1"><div class="val" id="streak-longest">0</div><div class="lbl">Longest Streak</div></div>
+            </div>
+        </div>
+    </div>
+
+</div><!-- /container -->
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
