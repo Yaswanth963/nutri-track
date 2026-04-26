@@ -365,6 +365,8 @@ function showConfirm(lucideIcon, title, msg, confirmLabel = 'Delete') {
 }
 
 // ── Food Search ───────────────────────────────────────────
+let _lastSearchResult = null;
+
 function onSearchInput() {
     const val = document.getElementById('search-input').value;
     const clearBtn = document.getElementById('search-clear');
@@ -393,6 +395,7 @@ async function searchFood() {
     try {
         const apiKey = _settings.groq_api_key || '';
         const data = await Groq.analyzeFood(apiKey, query);
+        _lastSearchResult = data;
         if (data.suggestion && !data.calories && !apiKey) {
             result.innerHTML = `<div style="color:var(--danger);font-size:0.85rem">${data.suggestion}</div>`;
             result.classList.add('show'); return;
@@ -422,7 +425,7 @@ async function searchFood() {
             </div>
             <div class="search-verdict">${data.suggestion}</div>
             <button class="btn btn-primary search-log-btn"
-                onclick="quickLogFromSearch(${JSON.stringify(data.food_name)}, ${data.calories}, ${data.protein_g}, ${data.carbs_g}, ${data.fat_g})">
+                onclick="quickLogFromSearch()">
                 <i data-lucide="plus-circle"></i> Log This
             </button>`;
         result.classList.add('show');
@@ -438,7 +441,9 @@ async function searchFood() {
 }
 
 // ── Quick-log from search result ─────────────────────────
-async function quickLogFromSearch(name, cal, prot, carbs, fat) {
+async function quickLogFromSearch() {
+    const d = _lastSearchResult;
+    if (!d) return;
     const mealTypeEl = document.getElementById('meal-type');
     const mealType = mealTypeEl ? mealTypeEl.value : 'snack';
     const mealLabel = mealTypeEl ? mealTypeEl.options[mealTypeEl.selectedIndex].text : 'Snack';
@@ -446,13 +451,13 @@ async function quickLogFromSearch(name, cal, prot, carbs, fat) {
     const time = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
     try {
         await DB.addFood({
-            description: name, meal_type: mealType,
+            description: d.food_name, meal_type: mealType,
             date: _trackDate, time,
-            calories: parseFloat(cal), protein_g: parseFloat(prot),
-            carbs_g: parseFloat(carbs), fat_g: parseFloat(fat),
-            health_score: 5, suggestion: '',
+            calories: parseFloat(d.calories), protein_g: parseFloat(d.protein_g),
+            carbs_g: parseFloat(d.carbs_g), fat_g: parseFloat(d.fat_g),
+            health_score: d.health_score || 5, suggestion: d.suggestion || '',
         });
-        showToast('success', `Added to ${mealLabel}`, `${name} · ${cal} kcal · ${prot}g protein`, 4000);
+        showToast('success', `Added to ${mealLabel}`, `${d.food_name} · ${d.calories} kcal · ${d.protein_g}g protein`, 4000);
         loadDailySummary();
         loadStreak();
     } catch (e) { showToast('error', 'Log failed', e.message); }
