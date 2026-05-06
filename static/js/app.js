@@ -331,11 +331,10 @@ async function init() {
         loadTodayPlan();
         startWaterReminder();
     }
-    _autoStartStepTracking();
     _updateGfitUI();
     if (sessionStorage.getItem('gfit_just_connected')) {
         sessionStorage.removeItem('gfit_just_connected');
-        showToast('success', 'Google Fit connected!', 'Tap Sync in the Steps card to pull your steps.');
+        showToast('success', 'Google Fit connected!', 'Syncing today\'s steps…');
         syncGfitSteps();
     }
 }
@@ -2435,59 +2434,73 @@ function _refreshStepsDisplay() {
 }
 
 function _updateStepTrackingUI() {
-    const enableBtn = document.getElementById('steps-enable-btn');
-    const stopBtn   = document.getElementById('steps-stop-btn');
-    const resumeBtn = document.getElementById('steps-resume-btn');
-    const syncBtn   = document.getElementById('steps-sync-gfit-btn');
-    const badgeEl   = document.getElementById('steps-source-badge');
-    if (enableBtn) enableBtn.style.display =
-        (!_stepTracking && _sensorAvail && typeof DeviceMotionEvent?.requestPermission === 'function') ? '' : 'none';
-    if (stopBtn)   stopBtn.style.display   = _stepTracking ? '' : 'none';
-    if (resumeBtn) resumeBtn.style.display =
-        (!_stepTracking && _sensorAvail && typeof DeviceMotionEvent?.requestPermission !== 'function') ? '' : 'none';
-    if (syncBtn)   syncBtn.style.display   = _gfitToken() ? '' : 'none';
+    const syncBtn = document.getElementById('steps-sync-gfit-btn');
+    const badgeEl = document.getElementById('steps-source-badge');
+    const metaEl  = document.getElementById('steps-meta');
+    const connected = !!_gfitToken();
+    if (syncBtn) syncBtn.style.display = connected ? '' : 'none';
     if (badgeEl) {
-        if (_stepTracking) {
-            badgeEl.textContent = '\u25cf Live';
-            badgeEl.style.cssText = 'display:inline-block;background:rgba(34,197,94,0.15);color:var(--success,#4caf50);border-color:rgba(34,197,94,0.3)';
-        } else if (_gfitToken()) {
+        if (connected) {
             badgeEl.textContent = '\u25cf Google Fit';
             badgeEl.style.cssText = 'display:inline-block;background:rgba(99,102,241,0.15);color:#818cf8;border-color:rgba(99,102,241,0.3)';
         } else {
             badgeEl.style.display = 'none';
         }
     }
+    if (metaEl && !connected && _stepCount === 0) {
+        metaEl.innerHTML = 'Connect Google Fit in <b>More \u2192 Activity &amp; Steps</b> to auto-sync.';
+    }
 }
 
 // Load steps display for any date (called on date change)
-function loadStepsCard(dateStr) {
+async function loadStepsCard(dateStr) {
     const today   = toLocalDateStr(new Date());
     const isToday = dateStr === today;
     const goal    = parseInt(_settings.steps_goal || 8000);
     const goalLbl = document.getElementById('steps-goal-lbl');
     if (goalLbl) goalLbl.textContent = goal.toLocaleString();
 
-    // For past dates just show stored value, don't affect live tracking
-    const stored = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + dateStr) || '0');
-    const display = (isToday && _stepTracking) ? _stepCount : stored;
-    if (isToday) _stepCount = stored; // keep _stepCount in sync when switching back to today
-
-    const countEl = document.getElementById('steps-count');
-    const progEl  = document.getElementById('steps-progress');
-    const metaEl  = document.getElementById('steps-meta');
-    if (countEl) countEl.textContent = display.toLocaleString();
-    if (progEl)  progEl.style.width  = Math.min(100, (display / goal) * 100) + '%';
-    if (metaEl && display > 0) {
-        const kcal = Math.round(display * 0.04);
-        const km   = (display * 0.00075).toFixed(2);
-        const rem  = display >= goal ? '&#10003; Goal reached!' : `${(goal - display).toLocaleString()} to go`;
-        metaEl.innerHTML = `~<b>${kcal}</b> kcal burned &middot; ~<b>${km}</b> km &middot; ${rem}`;
-    }
+    // Load cached/stored value first so display is instant
+    let steps = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + dateStr) || '0');
+    _stepCount = steps;
+    _renderStepsDisplay(steps, goal, dateStr);
     _updateStepTrackingUI();
+
+    // Auto-fetch from GFit if connected (today only, silently)
+    if (isToday && _gfitToken()) {
+        const gfitSteps = await _fetchGfitSteps(dateStr);
+        if (gfitSteps !== null && gfitSteps > steps) {
+            steps = gfitSteps;
+            _stepCount = steps;
+            localStorage.setItem(_MANUAL_STEPS_PFX + dateStr, String(steps));
+            _renderStepsDisplay(steps, goal, dateStr);
+        }
+    }
 
     // Pre-fill manual input in Settings with today's count
     const manualInput = document.getElementById('steps-manual-input');
-    if (manualInput && isToday) manualInput.value = stored || '';
+    if (manualInput && isToday) manualInput.value = steps || '';
+}
+
+function _renderStepsDisplay(steps, goal, dateStr) {
+    const today   = toLocalDateStr(new Date());
+    const countEl = document.getElementById('steps-count');
+    const progEl  = document.getElementById('steps-progress');
+    const metaEl  = document.getElementById('steps-meta');
+    if (countEl) countEl.textContent = steps.toLocaleString();
+    if (progEl)  progEl.style.width  = Math.min(100, (steps / goal) * 100) + '%';
+    if (metaEl) {
+        if (steps === 0 && !_gfitToken()) {
+            metaEl.innerHTML = 'Connect Google Fit in <b>More \u2192 Activity &amp; Steps</b> to auto-sync.';
+        } else if (steps === 0) {
+            metaEl.textContent = 'No steps recorded yet today. Tap Sync to refresh.';
+        } else {
+            const kcal = Math.round(steps * 0.04);
+            const km   = (steps * 0.00075).toFixed(2);
+            const rem  = steps >= goal ? '&#10003; Goal reached!' : `${(goal - steps).toLocaleString()} to go`;
+            metaEl.innerHTML = `~<b>${kcal}</b> kcal burned &middot; ~<b>${km}</b> km &middot; ${rem}`;
+        }
+    }
 }
 
 // ── Google Fit integration ────────────────────────────────
@@ -2567,19 +2580,18 @@ async function _fetchGfitSteps(dateStr) {
 }
 
 async function syncGfitSteps() {
-    if (!_gfitToken()) { showToast('warn', 'Not connected', 'Connect Google Fit first in Settings → Activity.'); return; }
+    if (!_gfitToken()) { showToast('warn', 'Not connected', 'Connect Google Fit first in More → Activity & Steps.'); return; }
     const today    = toLocalDateStr(new Date());
+    const syncBtn  = document.getElementById('steps-sync-gfit-btn');
+    if (syncBtn) syncBtn.innerHTML = '<i data-lucide="loader"></i> Syncing…';
     const gfitSteps = await _fetchGfitSteps(today);
+    if (syncBtn) { syncBtn.innerHTML = '<i data-lucide="refresh-cw"></i> Sync from Google Fit'; if (window.lucide) lucide.createIcons(); }
     if (gfitSteps === null) { showToast('error', 'Sync failed', 'Could not reach Google Fit. Try again.'); return; }
-    if (gfitSteps > _stepCount) {
-        _stepCount = gfitSteps;
-        localStorage.setItem(_MANUAL_STEPS_PFX + today, String(gfitSteps));
-        _refreshStepsDisplay();
-        showToast('success', 'Synced', `${gfitSteps.toLocaleString()} steps from Google Fit.`);
-    } else {
-        showToast('info', 'Already up to date', `Phone sensor has more steps (${_stepCount.toLocaleString()}).`);
-    }
+    _stepCount = gfitSteps;
+    localStorage.setItem(_MANUAL_STEPS_PFX + today, String(gfitSteps));
+    _renderStepsDisplay(gfitSteps, parseInt(_settings.steps_goal || 8000), today);
     _updateGfitUI();
+    showToast('success', 'Synced', `${gfitSteps.toLocaleString()} steps from Google Fit.`);
 }
 
 function _updateGfitUI() {

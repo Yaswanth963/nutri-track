@@ -321,30 +321,17 @@
         <div class="card" id="steps-card">
             <h2>
                 <i data-lucide="footprints" class="icon-md"></i> Steps Today
-                <span id="steps-source-badge" class="steps-source-badge" style="display:none">● Live</span>
+                <span id="steps-source-badge" class="steps-source-badge" style="display:none">● Google Fit</span>
             </h2>
             <div class="steps-display">
                 <span class="steps-count" id="steps-count">0</span>
                 <span class="steps-unit">&nbsp;/ <span id="steps-goal-lbl">8,000</span> steps</span>
             </div>
             <div class="progress-bar"><div class="progress-fill progress-fill-steps" id="steps-progress" style="width:0%"></div></div>
-            <div class="steps-meta" id="steps-meta">Starting motion sensor…</div>
-            <div class="steps-actions">
-                <!-- iOS only: needs user gesture for sensor permission -->
-                <button class="btn btn-primary" id="steps-enable-btn" onclick="enableSensorIOS()" style="display:none">
-                    <i data-lucide="smartphone"></i> Enable Motion Sensor
-                </button>
-                <button class="btn steps-stop-btn" id="steps-stop-btn" onclick="stopStepTracking()" style="display:none">
-                    <i data-lucide="pause-circle"></i> Pause
-                </button>
-                <button class="btn steps-resume-btn" id="steps-resume-btn" onclick="resumeStepTracking()" style="display:none">
-                    <i data-lucide="play-circle"></i> Resume
-                </button>
-                <button class="btn steps-resume-btn" id="steps-sync-gfit-btn" onclick="syncGfitSteps()" style="display:none">
-                    <i data-lucide="refresh-cw"></i> Sync Fit
-                </button>
-                <button class="btn steps-reset-btn" onclick="resetTodaySteps()" title="Reset today's steps">
-                    <i data-lucide="rotate-ccw" style="width:14px;height:14px;stroke:var(--muted)"></i>
+            <div class="steps-meta" id="steps-meta">Connect Google Fit in <b>More → Activity &amp; Steps</b> to auto-sync.</div>
+            <div class="steps-actions" style="margin-top:10px">
+                <button class="btn steps-resume-btn" id="steps-sync-gfit-btn" onclick="syncGfitSteps()" style="display:none;flex:1">
+                    <i data-lucide="refresh-cw"></i> Sync from Google Fit
                 </button>
             </div>
         </div>
@@ -935,7 +922,7 @@
             <!-- Google Fit connect -->
             <div style="margin-bottom:16px">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                    <img src="https://www.gstatic.com/images/branding/product/1x/google_fit_48dp.png" alt="Google Fit" style="width:24px;height:24px;border-radius:4px">
+                    <span style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#4285F4,#34A853);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0">G</span>
                     <span style="font-size:0.9rem;font-weight:600">Google Fit</span>
                     <span id="gfit-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">Not connected</span>
                 </div>
