@@ -2471,7 +2471,7 @@ async function loadStepsCard(dateStr) {
     // Auto-fetch from GFit if connected (today only, silently)
     if (isToday && _gfitToken()) {
         const gfitSteps = await _fetchGfitSteps(dateStr);
-        if (gfitSteps !== null && gfitSteps > steps) {
+        if (gfitSteps !== null) {
             steps = gfitSteps;
             _stepCount = steps;
             localStorage.setItem(_MANUAL_STEPS_PFX + dateStr, String(steps));
@@ -2554,6 +2554,8 @@ function disconnectGoogleFit() {
 async function _fetchGfitSteps(dateStr) {
     const token = _gfitToken();
     if (!token) return null;
+    // Use local midnight → local midnight+24h so IST/any timezone is correct.
+    // Do NOT use bucketByTime — it aligns to UTC midnight, causing missing steps.
     const d       = new Date(dateStr + 'T00:00:00');
     const startMs = d.getTime();
     const endMs   = startMs + 86400000;
@@ -2563,7 +2565,6 @@ async function _fetchGfitSteps(dateStr) {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }],
-                bucketByTime: { durationMillis: 86400000 },
                 startTimeMillis: startMs,
                 endTimeMillis: endMs
             })
@@ -2572,12 +2573,16 @@ async function _fetchGfitSteps(dateStr) {
             if (res.status === 401) { localStorage.removeItem(_GFIT_TOKEN_KEY); _updateGfitUI(); }
             return null;
         }
-        const data    = await res.json();
-        const bucket  = data.bucket?.[0];
-        if (!bucket) return 0;
-        const dataset = bucket.dataset?.[0];
-        if (!dataset?.point?.length) return 0;
-        return dataset.point.reduce((sum, p) => sum + (p.value?.[0]?.intVal || 0), 0);
+        const data = await res.json();
+        let total = 0;
+        for (const bucket of (data.bucket || [])) {
+            for (const dataset of (bucket.dataset || [])) {
+                for (const point of (dataset.point || [])) {
+                    total += (point.value?.[0]?.intVal || 0);
+                }
+            }
+        }
+        return total;
     } catch { return null; }
 }
 
