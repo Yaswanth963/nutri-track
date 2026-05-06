@@ -2558,20 +2558,22 @@ async function _fetchGfitSteps(dateStr) {
     const startMs = d.getTime();
     const endMs   = startMs + 86400000;
 
-    // Query both recorded delta steps AND estimated steps — take the higher value
-    const dataTypes = [
-        'com.google.step_count.delta',
-        'com.google.step_count.cumulative'
+    // Try sources in order — use the first one that returns data.
+    // merge_step_deltas is the same source Google Fit app uses internally.
+    const sources = [
+        { dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:merge_step_deltas' },
+        { dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps' },
+        { dataTypeName: 'com.google.step_count.delta' }
     ];
 
     let best = 0;
-    for (const dataType of dataTypes) {
+    for (const aggregateBy of sources) {
         try {
             const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    aggregateBy: [{ dataTypeName: dataType }],
+                    aggregateBy: [aggregateBy],
                     bucketByTime: { durationMillis: endMs - startMs },
                     startTimeMillis: startMs,
                     endTimeMillis: endMs
@@ -2591,7 +2593,7 @@ async function _fetchGfitSteps(dateStr) {
                 }
             }
             if (total > best) best = total;
-        } catch { /* ignore this data type, try next */ }
+        } catch { /* ignore, try next source */ }
     }
     return best;
 }
