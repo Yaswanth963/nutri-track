@@ -2434,21 +2434,23 @@ function _refreshStepsDisplay() {
 }
 
 function _updateStepTrackingUI() {
-    const syncBtn = document.getElementById('steps-sync-gfit-btn');
-    const badgeEl = document.getElementById('steps-source-badge');
-    const metaEl  = document.getElementById('steps-meta');
     const connected = !!_gfitToken();
-    if (syncBtn) syncBtn.style.display = connected ? '' : 'none';
+    // Home page buttons (inside steps card header)
+    const homeConnect = document.getElementById('gfit-home-connect-btn');
+    const homeSync    = document.getElementById('gfit-home-sync-btn');
+    const badgeEl     = document.getElementById('steps-source-badge');
+    if (homeConnect) homeConnect.style.display = connected ? 'none' : 'flex';
+    if (homeSync)    homeSync.style.display    = connected ? 'flex' : 'none';
     if (badgeEl) {
         if (connected) {
-            badgeEl.textContent = '\u25cf Google Fit';
-            badgeEl.style.cssText = 'display:inline-block;background:rgba(99,102,241,0.15);color:#818cf8;border-color:rgba(99,102,241,0.3)';
+            badgeEl.style.display = 'inline-block';
         } else {
             badgeEl.style.display = 'none';
         }
     }
+    const metaEl = document.getElementById('steps-meta');
     if (metaEl && !connected && _stepCount === 0) {
-        metaEl.innerHTML = 'Connect Google Fit in <b>More \u2192 Activity &amp; Steps</b> to auto-sync.';
+        metaEl.innerHTML = 'Tap <b>Connect</b> to link Google Fit and auto-sync steps.';
     }
 }
 
@@ -2596,6 +2598,7 @@ async function syncGfitSteps() {
 
 function _updateGfitUI() {
     const connected  = !!_gfitToken();
+    // Settings card buttons
     const connectBtn = document.getElementById('gfit-connect-btn');
     const disconnBtn = document.getElementById('gfit-disconnect-btn');
     const syncBtn    = document.getElementById('gfit-sync-btn');
@@ -2606,12 +2609,12 @@ function _updateGfitUI() {
     if (statusEl) {
         if (connected) {
             const expiry = new Date(parseInt(localStorage.getItem(_GFIT_EXPIRY_KEY) || '0'));
-            statusEl.innerHTML = `<span style="color:var(--success)">&#10003; Connected</span> &middot; token expires ${expiry.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+            statusEl.innerHTML = `<span style="color:var(--success)">&#10003; Connected</span> &middot; expires ${expiry.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
         } else {
             statusEl.textContent = 'Not connected';
         }
     }
-    // Update the source badge in the steps card
+    // Home page step card buttons
     _updateStepTrackingUI();
 }
 

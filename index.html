@@ -321,19 +321,26 @@
         <div class="card" id="steps-card">
             <h2>
                 <i data-lucide="footprints" class="icon-md"></i> Steps Today
-                <span id="steps-source-badge" class="steps-source-badge" style="display:none">● Google Fit</span>
+                <span style="display:flex;align-items:center;gap:6px;margin-left:auto">
+                    <span id="steps-source-badge" style="display:none;font-size:0.68rem;font-weight:700;background:rgba(66,133,244,0.12);color:#4285F4;border:1px solid rgba(66,133,244,0.3);padding:2px 8px;border-radius:99px">&#9679; Google Fit</span>
+                    <!-- Connect button (shown when not connected) -->
+                    <button id="gfit-home-connect-btn" onclick="connectGoogleFit()" title="Connect Google Fit"
+                        style="display:none;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:0.75rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">
+                        <i data-lucide="link" style="width:13px;height:13px"></i> Connect
+                    </button>
+                    <!-- Sync button (shown when connected) -->
+                    <button id="gfit-home-sync-btn" onclick="syncGfitSteps()" title="Sync from Google Fit"
+                        style="display:none;background:none;border:1px solid rgba(66,133,244,0.4);border-radius:8px;padding:5px 8px;cursor:pointer;color:#4285F4">
+                        <i data-lucide="refresh-cw" style="width:13px;height:13px"></i>
+                    </button>
+                </span>
             </h2>
             <div class="steps-display">
                 <span class="steps-count" id="steps-count">0</span>
                 <span class="steps-unit">&nbsp;/ <span id="steps-goal-lbl">8,000</span> steps</span>
             </div>
             <div class="progress-bar"><div class="progress-fill progress-fill-steps" id="steps-progress" style="width:0%"></div></div>
-            <div class="steps-meta" id="steps-meta">Connect Google Fit in <b>More → Activity &amp; Steps</b> to auto-sync.</div>
-            <div class="steps-actions" style="margin-top:10px">
-                <button class="btn steps-resume-btn" id="steps-sync-gfit-btn" onclick="syncGfitSteps()" style="display:none;flex:1">
-                    <i data-lucide="refresh-cw"></i> Sync from Google Fit
-                </button>
-            </div>
+            <div class="steps-meta" id="steps-meta">Tap <b>Connect</b> to link Google Fit and auto-sync steps.</div>
         </div>
 
         <!-- TODAY'S PLAN — shown dynamically -->
@@ -919,35 +926,22 @@
         </div>
         <div class="card" id="activity-card">
             <h2><i data-lucide="footprints" class="icon-md"></i> Activity &amp; Steps</h2>
-            <!-- Google Fit connect -->
-            <div style="margin-bottom:16px">
-                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                    <span style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#4285F4,#34A853);display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;flex-shrink:0">G</span>
-                    <span style="font-size:0.9rem;font-weight:600">Google Fit</span>
-                    <span id="gfit-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">Not connected</span>
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 0 8px">
+                <svg width="28" height="28" viewBox="0 0 48 48" style="flex-shrink:0"><circle cx="24" cy="24" r="24" fill="#fff"/><path d="M24 10a14 14 0 1 0 0 28A14 14 0 0 0 24 10z" fill="#4285F4"/><path d="M24 16v8l5 3" stroke="#fff" stroke-width="2.5" stroke-linecap="round" fill="none"/><circle cx="24" cy="24" r="3" fill="#fff"/></svg>
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:0.88rem;font-weight:600">Google Fit</div>
+                    <div id="gfit-status" style="font-size:0.75rem;color:var(--muted);margin-top:1px">Not connected</div>
                 </div>
-                <p style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">Connect once — steps sync from Google Fit including when the screen was off.</p>
-                <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button class="btn btn-primary" id="gfit-connect-btn" onclick="connectGoogleFit()" style="flex:1">
-                        <i data-lucide="link"></i> Connect Google Fit
-                    </button>
-                    <button class="btn" id="gfit-disconnect-btn" onclick="disconnectGoogleFit()" style="display:none;flex:1;border:1px solid var(--card-border)">
-                        <i data-lucide="unlink"></i> Disconnect
-                    </button>
-                    <button class="btn btn-primary" id="gfit-sync-btn" onclick="syncGfitSteps()" style="display:none;flex:1">
-                        <i data-lucide="refresh-cw"></i> Sync Now
-                    </button>
-                </div>
-            </div>
-            <hr style="border:none;border-top:1px solid var(--card-border);margin:4px 0 14px">
-            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:6px">Manual override — enter steps from any source</label>
-            <div style="display:flex;gap:8px;margin-bottom:4px">
-                <input type="number" id="steps-manual-input" class="themed-input" placeholder="e.g. 7500" min="0" max="100000" style="flex:1">
-                <button class="btn btn-primary" style="width:auto;padding:10px 14px" onclick="saveManualSteps()">
-                    <i data-lucide="save"></i>
+                <button class="btn btn-primary" id="gfit-connect-btn" onclick="connectGoogleFit()" style="width:auto;padding:7px 14px;font-size:0.8rem;white-space:nowrap">
+                    <i data-lucide="link"></i> Connect
+                </button>
+                <button class="btn" id="gfit-disconnect-btn" onclick="disconnectGoogleFit()" style="display:none;width:auto;padding:7px 12px;font-size:0.8rem;border:1px solid var(--card-border)" title="Disconnect">
+                    <i data-lucide="unlink"></i>
+                </button>
+                <button class="btn btn-primary" id="gfit-sync-btn" onclick="syncGfitSteps()" style="display:none;width:auto;padding:7px 12px;font-size:0.8rem" title="Sync now">
+                    <i data-lucide="refresh-cw"></i>
                 </button>
             </div>
-            <p style="font-size:0.75rem;color:var(--muted);margin-bottom:0">Overrides sensor/Fit count for today.</p>
         </div>
 
         <div class="card" id="pwa-install-card">
