@@ -2462,26 +2462,25 @@ async function loadStepsCard(dateStr) {
     const goalLbl = document.getElementById('steps-goal-lbl');
     if (goalLbl) goalLbl.textContent = goal.toLocaleString();
 
-    // Load cached/stored value first so display is instant
-    let steps = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + dateStr) || '0');
-    _stepCount = steps;
-    _renderStepsDisplay(steps, goal, dateStr);
     _updateStepTrackingUI();
 
-    // Auto-fetch from GFit if connected (today only, silently)
+    // If GFit connected and viewing today — fetch live, no cache
     if (isToday && _gfitToken()) {
+        const metaEl = document.getElementById('steps-meta');
+        if (metaEl) metaEl.textContent = 'Fetching from Google Fit…';
         const gfitSteps = await _fetchGfitSteps(dateStr);
         if (gfitSteps !== null) {
-            steps = gfitSteps;
-            _stepCount = steps;
-            localStorage.setItem(_MANUAL_STEPS_PFX + dateStr, String(steps));
-            _renderStepsDisplay(steps, goal, dateStr);
+            _stepCount = gfitSteps;
+            _renderStepsDisplay(gfitSteps, goal, dateStr);
+        } else {
+            if (metaEl) metaEl.textContent = 'Could not reach Google Fit. Tap ↻ to retry.';
         }
+        return;
     }
 
-    // Pre-fill manual input in Settings with today's count
-    const manualInput = document.getElementById('steps-manual-input');
-    if (manualInput && isToday) manualInput.value = steps || '';
+    // Not connected or past date — show 0
+    _stepCount = 0;
+    _renderStepsDisplay(0, goal, dateStr);
 }
 
 function _renderStepsDisplay(steps, goal, dateStr) {
@@ -2554,49 +2553,60 @@ function disconnectGoogleFit() {
 async function _fetchGfitSteps(dateStr) {
     const token = _gfitToken();
     if (!token) return null;
-    // Use local midnight → local midnight+24h so IST/any timezone is correct.
-    // Do NOT use bucketByTime — it aligns to UTC midnight, causing missing steps.
+    // Use local midnight boundaries so IST/any timezone works correctly
     const d       = new Date(dateStr + 'T00:00:00');
     const startMs = d.getTime();
     const endMs   = startMs + 86400000;
-    try {
-        const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }],
-                startTimeMillis: startMs,
-                endTimeMillis: endMs
-            })
-        });
-        if (!res.ok) {
-            if (res.status === 401) { localStorage.removeItem(_GFIT_TOKEN_KEY); _updateGfitUI(); }
-            return null;
-        }
-        const data = await res.json();
-        let total = 0;
-        for (const bucket of (data.bucket || [])) {
-            for (const dataset of (bucket.dataset || [])) {
-                for (const point of (dataset.point || [])) {
-                    total += (point.value?.[0]?.intVal || 0);
+
+    // Query both recorded delta steps AND estimated steps — take the higher value
+    const dataTypes = [
+        'com.google.step_count.delta',
+        'com.google.step_count.cumulative'
+    ];
+
+    let best = 0;
+    for (const dataType of dataTypes) {
+        try {
+            const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    aggregateBy: [{ dataTypeName: dataType }],
+                    bucketByTime: { durationMillis: endMs - startMs },
+                    startTimeMillis: startMs,
+                    endTimeMillis: endMs
+                })
+            });
+            if (!res.ok) {
+                if (res.status === 401) { localStorage.removeItem(_GFIT_TOKEN_KEY); _updateGfitUI(); return null; }
+                continue;
+            }
+            const data = await res.json();
+            let total = 0;
+            for (const bucket of (data.bucket || [])) {
+                for (const dataset of (bucket.dataset || [])) {
+                    for (const point of (dataset.point || [])) {
+                        total += (point.value?.[0]?.intVal || 0);
+                    }
                 }
             }
-        }
-        return total;
-    } catch { return null; }
+            if (total > best) best = total;
+        } catch { /* ignore this data type, try next */ }
+    }
+    return best;
 }
 
 async function syncGfitSteps() {
-    if (!_gfitToken()) { showToast('warn', 'Not connected', 'Connect Google Fit first in More → Activity & Steps.'); return; }
-    const today    = toLocalDateStr(new Date());
-    const syncBtn  = document.getElementById('steps-sync-gfit-btn');
-    if (syncBtn) syncBtn.innerHTML = '<i data-lucide="loader"></i> Syncing…';
+    if (!_gfitToken()) { showToast('warn', 'Not connected', 'Tap Connect on the steps card.'); return; }
+    const today   = toLocalDateStr(new Date());
+    const goal    = parseInt(_settings.steps_goal || 8000);
+    const syncBtn = document.getElementById('gfit-home-sync-btn');
+    if (syncBtn) syncBtn.innerHTML = '<i data-lucide="loader" style="width:13px;height:13px;animation:spin 1s linear infinite"></i>';
     const gfitSteps = await _fetchGfitSteps(today);
-    if (syncBtn) { syncBtn.innerHTML = '<i data-lucide="refresh-cw"></i> Sync from Google Fit'; if (window.lucide) lucide.createIcons(); }
+    if (syncBtn) { syncBtn.innerHTML = '<i data-lucide="refresh-cw" style="width:13px;height:13px"></i>'; if (window.lucide) lucide.createIcons(); }
     if (gfitSteps === null) { showToast('error', 'Sync failed', 'Could not reach Google Fit. Try again.'); return; }
     _stepCount = gfitSteps;
-    localStorage.setItem(_MANUAL_STEPS_PFX + today, String(gfitSteps));
-    _renderStepsDisplay(gfitSteps, parseInt(_settings.steps_goal || 8000), today);
+    _renderStepsDisplay(gfitSteps, goal, today);
     _updateGfitUI();
     showToast('success', 'Synced', `${gfitSteps.toLocaleString()} steps from Google Fit.`);
 }
