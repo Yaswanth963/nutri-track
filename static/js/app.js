@@ -230,6 +230,7 @@ function selectTrackDate(dateStr) {
     _pastEditMode = false;
     buildDateStrip();
     loadDailySummary();
+    loadStepsCard(dateStr);
     const picker = document.getElementById('track-date-picker');
     if (picker) picker.value = dateStr;
 }
@@ -246,6 +247,7 @@ function jumpToDate(dateStr) {
     _pastEditMode = false;
     buildDateStrip();
     loadDailySummary();
+    loadStepsCard(dateStr);
 }
 
 function togglePastEdit() {
@@ -328,6 +330,13 @@ async function init() {
         loadStreak();
         loadTodayPlan();
         startWaterReminder();
+    }
+    _autoStartStepTracking();
+    _updateGfitUI();
+    if (sessionStorage.getItem('gfit_just_connected')) {
+        sessionStorage.removeItem('gfit_just_connected');
+        showToast('success', 'Google Fit connected!', 'Tap Sync in the Steps card to pull your steps.');
+        syncGfitSteps();
     }
 }
 init();
@@ -1875,6 +1884,13 @@ async function loadSettingsTab() {
     _setSettingsSaveDirty(false);
     _updateGfitUI();
     loadStepsCard(_trackDate);
+    // Pre-fill manual step input with today's saved steps
+    const stepsManualEl = document.getElementById('steps-manual-input');
+    if (stepsManualEl) {
+        const todayStr = toLocalDateStr(new Date());
+        stepsManualEl.value = localStorage.getItem(_MANUAL_STEPS_PFX + todayStr) || '';
+        stepsManualEl.placeholder = 'Steps for today (' + todayStr + ')';
+    }
     const settingsFields = ['set-cal','set-protein','set-carbs','set-fat','set-target-weight','set-water','set-steps-goal','set-height','set-groq-key'];
     settingsFields.forEach(id => {
         const el = document.getElementById(id);
@@ -2250,24 +2266,249 @@ async function installPWA() {
     if (outcome === 'accepted') _installPrompt = null;
 }
 
-// ── Steps & Google Fit ────────────────────────────────────
-const _GFIT_TOKEN_KEY  = 'gfit_token';
-const _GFIT_EXPIRY_KEY = 'gfit_expiry';
-const _GFIT_CACHE_PFX  = 'gfit_steps_';
+// ── Steps — auto-tracking via phone accelerometer ─────────
+// No account, no app, no setup. Works on any phone.
+// Android Chrome: starts automatically on page load.
+// iPhone Safari: needs one-time "Enable Motion Sensor" tap (iOS security rule — can't bypass).
+// Laptop: random movement won't count — needs the rhythmic up/down walking pattern.
+
 const _MANUAL_STEPS_PFX = 'manual_steps_';
 
-// Check for OAuth token returned in URL hash (after Google redirect)
+let _stepTracking   = false;   // sensor currently listening
+let _sensorAvail    = false;   // phone has a motion sensor
+let _stepCount      = 0;
+let _stepAvg        = 9.8;     // running average of magnitude (gravity baseline)
+let _stepPeakHit    = false;   // prevents double-count per step
+let _stepLastTime   = 0;
+const _STEP_THRESHOLD = 2.2;   // m/s² spike above average = one step
+const _STEP_COOLDOWN  = 280;   // ms between steps (caps at ~3.5 steps/sec for running)
+const _STEP_AVG_ALPHA = 0.97;  // smoothing — slow drift so baseline adapts to orientation
+
+function _handleMotion(e) {
+    // Prefer acceleration without gravity (cleaner zero-baseline).
+    // Fall back to accelerationIncludingGravity (some older Android).
+    let ax, ay, az, useGravity = false;
+    if (e.acceleration && e.acceleration.x != null) {
+        ax = e.acceleration.x || 0;
+        ay = e.acceleration.y || 0;
+        az = e.acceleration.z || 0;
+    } else if (e.accelerationIncludingGravity) {
+        ax = e.accelerationIncludingGravity.x || 0;
+        ay = e.accelerationIncludingGravity.y || 0;
+        az = e.accelerationIncludingGravity.z || 0;
+        useGravity = true;
+    } else return;
+
+    const mag = Math.sqrt(ax * ax + ay * ay + az * az);
+    _stepAvg = _stepAvg * _STEP_AVG_ALPHA + mag * (1 - _STEP_AVG_ALPHA);
+
+    const baseline  = useGravity ? _stepAvg : 0;
+    const threshold = baseline + _STEP_THRESHOLD;
+    const now       = Date.now();
+
+    if (mag > threshold && !_stepPeakHit && (now - _stepLastTime) > _STEP_COOLDOWN) {
+        _stepPeakHit  = true;
+        _stepLastTime = now;
+        _stepCount++;
+        localStorage.setItem(_MANUAL_STEPS_PFX + _trackDate, String(_stepCount));
+        _refreshStepsDisplay();
+    } else if (mag <= threshold) {
+        _stepPeakHit = false;
+    }
+}
+
+function _doStartTracking() {
+    // Load existing count so we don't reset if the user re-opens the app mid-day
+    _stepCount    = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + toLocalDateStr(new Date())) || '0');
+    _stepAvg      = 9.8;
+    _stepPeakHit  = false;
+    _stepTracking = true;
+    _sensorAvail  = true;
+    window.addEventListener('devicemotion', _handleMotion);
+    _updateStepTrackingUI();
+    _refreshStepsDisplay();
+}
+
+// Called automatically on init(). Android/desktop: silent start. iOS: shows permission button.
+async function _autoStartStepTracking() {
+    if (!window.DeviceMotionEvent) {
+        _sensorAvail = false;
+        const metaEl = document.getElementById('steps-meta');
+        if (metaEl) metaEl.textContent = 'No motion sensor detected. Use manual entry in More → Activity.';
+        _updateStepTrackingUI();
+        return;
+    }
+    _sensorAvail = true;
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+        // iOS 13+ — permission requires a user gesture, can't auto-grant silently
+        const enableBtn = document.getElementById('steps-enable-btn');
+        if (enableBtn) enableBtn.style.display = '';
+        const metaEl = document.getElementById('steps-meta');
+        if (metaEl) metaEl.innerHTML = 'Tap <b>Enable Motion Sensor</b> once to start auto step counting (iPhone security requirement).';
+        return;
+    }
+    // Android / desktop — start immediately, no permission needed
+    _doStartTracking();
+}
+
+// iOS: called from the "Enable Motion Sensor" button tap
+async function enableSensorIOS() {
+    try {
+        const perm = await DeviceMotionEvent.requestPermission();
+        if (perm !== 'granted') {
+            showToast('warn', 'Permission denied', 'Go to Settings → Safari → Motion & Orientation Access → Allow.');
+            return;
+        }
+        const enableBtn = document.getElementById('steps-enable-btn');
+        if (enableBtn) enableBtn.style.display = 'none';
+        _doStartTracking();
+        showToast('success', 'Motion sensor enabled', 'Steps will count automatically while the app is open.');
+    } catch (err) {
+        showToast('error', 'Permission error', err.message);
+    }
+}
+
+function stopStepTracking() {
+    _stepTracking = false;
+    window.removeEventListener('devicemotion', _handleMotion);
+    _updateStepTrackingUI();
+    showToast('info', 'Tracking paused', `${_stepCount.toLocaleString()} steps saved. Tap Resume to continue.`);
+}
+
+function resumeStepTracking() {
+    if (!_sensorAvail) return;
+    _stepAvg     = 9.8;
+    _stepPeakHit = false;
+    _stepTracking = true;
+    window.addEventListener('devicemotion', _handleMotion);
+    _updateStepTrackingUI();
+    showToast('success', 'Tracking resumed', '');
+}
+
+function resetTodaySteps() {
+    if (_stepTracking) {
+        window.removeEventListener('devicemotion', _handleMotion);
+        _stepTracking = false;
+    }
+    _stepCount = 0;
+    localStorage.setItem(_MANUAL_STEPS_PFX + toLocalDateStr(new Date()), '0');
+    _refreshStepsDisplay();
+    // Re-start tracking automatically after reset
+    if (_sensorAvail && typeof DeviceMotionEvent.requestPermission !== 'function') {
+        _doStartTracking();
+    } else {
+        _updateStepTrackingUI();
+    }
+    showToast('info', 'Steps reset', 'Today\'s step count cleared.');
+}
+
+function saveManualSteps() {
+    const input = document.getElementById('steps-manual-input');
+    const val = parseInt(input ? input.value : '');
+    if (isNaN(val) || val < 0) { showToast('warn', 'Invalid steps', 'Enter a valid step count.'); return; }
+    // Pause sensor so manual value is preserved
+    if (_stepTracking) stopStepTracking();
+    _stepCount = val;
+    localStorage.setItem(_MANUAL_STEPS_PFX + toLocalDateStr(new Date()), String(val));
+    _refreshStepsDisplay();
+    _updateStepTrackingUI();
+    showToast('success', 'Steps saved', `${val.toLocaleString()} steps logged for today.`);
+}
+
+function _refreshStepsDisplay() {
+    const goal    = parseInt(_settings.steps_goal || 8000);
+    const countEl = document.getElementById('steps-count');
+    const progEl  = document.getElementById('steps-progress');
+    const metaEl  = document.getElementById('steps-meta');
+    const goalLbl = document.getElementById('steps-goal-lbl');
+    if (goalLbl) goalLbl.textContent = goal.toLocaleString();
+    if (countEl) countEl.textContent = _stepCount.toLocaleString();
+    if (progEl)  progEl.style.width  = Math.min(100, (_stepCount / goal) * 100) + '%';
+    if (metaEl) {
+        const kcal = Math.round(_stepCount * 0.04);
+        const km   = (_stepCount * 0.00075).toFixed(2);
+        const rem  = _stepCount >= goal
+            ? '&#10003; Goal reached!'
+            : `${(goal - _stepCount).toLocaleString()} to go`;
+        metaEl.innerHTML = `~<b>${kcal}</b> kcal burned &middot; ~<b>${km}</b> km &middot; ${rem}`;
+    }
+}
+
+function _updateStepTrackingUI() {
+    const enableBtn = document.getElementById('steps-enable-btn');
+    const stopBtn   = document.getElementById('steps-stop-btn');
+    const resumeBtn = document.getElementById('steps-resume-btn');
+    const syncBtn   = document.getElementById('steps-sync-gfit-btn');
+    const badgeEl   = document.getElementById('steps-source-badge');
+    if (enableBtn) enableBtn.style.display =
+        (!_stepTracking && _sensorAvail && typeof DeviceMotionEvent?.requestPermission === 'function') ? '' : 'none';
+    if (stopBtn)   stopBtn.style.display   = _stepTracking ? '' : 'none';
+    if (resumeBtn) resumeBtn.style.display =
+        (!_stepTracking && _sensorAvail && typeof DeviceMotionEvent?.requestPermission !== 'function') ? '' : 'none';
+    if (syncBtn)   syncBtn.style.display   = _gfitToken() ? '' : 'none';
+    if (badgeEl) {
+        if (_stepTracking) {
+            badgeEl.textContent = '\u25cf Live';
+            badgeEl.style.cssText = 'display:inline-block;background:rgba(34,197,94,0.15);color:var(--success,#4caf50);border-color:rgba(34,197,94,0.3)';
+        } else if (_gfitToken()) {
+            badgeEl.textContent = '\u25cf Google Fit';
+            badgeEl.style.cssText = 'display:inline-block;background:rgba(99,102,241,0.15);color:#818cf8;border-color:rgba(99,102,241,0.3)';
+        } else {
+            badgeEl.style.display = 'none';
+        }
+    }
+}
+
+// Load steps display for any date (called on date change)
+function loadStepsCard(dateStr) {
+    const today   = toLocalDateStr(new Date());
+    const isToday = dateStr === today;
+    const goal    = parseInt(_settings.steps_goal || 8000);
+    const goalLbl = document.getElementById('steps-goal-lbl');
+    if (goalLbl) goalLbl.textContent = goal.toLocaleString();
+
+    // For past dates just show stored value, don't affect live tracking
+    const stored = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + dateStr) || '0');
+    const display = (isToday && _stepTracking) ? _stepCount : stored;
+    if (isToday) _stepCount = stored; // keep _stepCount in sync when switching back to today
+
+    const countEl = document.getElementById('steps-count');
+    const progEl  = document.getElementById('steps-progress');
+    const metaEl  = document.getElementById('steps-meta');
+    if (countEl) countEl.textContent = display.toLocaleString();
+    if (progEl)  progEl.style.width  = Math.min(100, (display / goal) * 100) + '%';
+    if (metaEl && display > 0) {
+        const kcal = Math.round(display * 0.04);
+        const km   = (display * 0.00075).toFixed(2);
+        const rem  = display >= goal ? '&#10003; Goal reached!' : `${(goal - display).toLocaleString()} to go`;
+        metaEl.innerHTML = `~<b>${kcal}</b> kcal burned &middot; ~<b>${km}</b> km &middot; ${rem}`;
+    }
+    _updateStepTrackingUI();
+
+    // Pre-fill manual input in Settings with today's count
+    const manualInput = document.getElementById('steps-manual-input');
+    if (manualInput && isToday) manualInput.value = stored || '';
+}
+
+// ── Google Fit integration ────────────────────────────────
+// Client ID is safe to be public — Google only allows it from the authorized
+// redirect URI (https://yaswanth963.github.io/nutri-track/).
+const _GFIT_CLIENT_ID = '538577551704-7857bee54lfvil6ct8mu1rfq65gqr9ml.apps.googleusercontent.com';
+const _GFIT_TOKEN_KEY  = 'gfit_token';
+const _GFIT_EXPIRY_KEY = 'gfit_expiry';
+
+// Check if we just got redirected back from Google OAuth
 (function _checkGfitRedirect() {
     if (!window.location.hash) return;
     const params = new URLSearchParams(window.location.hash.substring(1));
     const token = params.get('access_token');
     const expiresIn = params.get('expires_in');
-    if (token) {
-        localStorage.setItem(_GFIT_TOKEN_KEY, token);
-        localStorage.setItem(_GFIT_EXPIRY_KEY, String(Date.now() + parseInt(expiresIn || '3600') * 1000));
-        history.replaceState(null, '', window.location.pathname + window.location.search);
-        setTimeout(() => showToast('success', 'Google Fit connected!', 'Steps will sync automatically.'), 800);
-    }
+    if (!token) return;
+    localStorage.setItem(_GFIT_TOKEN_KEY, token);
+    localStorage.setItem(_GFIT_EXPIRY_KEY, String(Date.now() + parseInt(expiresIn || '3600') * 1000));
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    // Will be picked up by init() to show success toast
+    sessionStorage.setItem('gfit_just_connected', '1');
 })();
 
 function _gfitToken() {
@@ -2276,19 +2517,35 @@ function _gfitToken() {
     return (token && Date.now() < expiry) ? token : null;
 }
 
+function connectGoogleFit() {
+    const redirectUri = encodeURIComponent('https://yaswanth963.github.io/nutri-track/');
+    const scope       = encodeURIComponent('https://www.googleapis.com/auth/fitness.activity.read');
+    window.location.href =
+        `https://accounts.google.com/o/oauth2/v2/auth` +
+        `?client_id=${encodeURIComponent(_GFIT_CLIENT_ID)}` +
+        `&redirect_uri=${redirectUri}` +
+        `&response_type=token` +
+        `&scope=${scope}` +
+        `&prompt=select_account`;
+}
+
+function disconnectGoogleFit() {
+    localStorage.removeItem(_GFIT_TOKEN_KEY);
+    localStorage.removeItem(_GFIT_EXPIRY_KEY);
+    _updateGfitUI();
+    showToast('info', 'Disconnected', 'Google Fit has been disconnected.');
+}
+
 async function _fetchGfitSteps(dateStr) {
     const token = _gfitToken();
     if (!token) return null;
-    const d = new Date(dateStr + 'T00:00:00');
+    const d       = new Date(dateStr + 'T00:00:00');
     const startMs = d.getTime();
     const endMs   = startMs + 86400000;
     try {
         const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }],
                 bucketByTime: { durationMillis: 86400000 },
@@ -2297,124 +2554,53 @@ async function _fetchGfitSteps(dateStr) {
             })
         });
         if (!res.ok) {
-            if (res.status === 401) localStorage.removeItem(_GFIT_TOKEN_KEY);
+            if (res.status === 401) { localStorage.removeItem(_GFIT_TOKEN_KEY); _updateGfitUI(); }
             return null;
         }
-        const data = await res.json();
-        const bucket = data.bucket && data.bucket[0];
+        const data    = await res.json();
+        const bucket  = data.bucket?.[0];
         if (!bucket) return 0;
-        const dataset = bucket.dataset && bucket.dataset[0];
-        if (!dataset || !dataset.point || !dataset.point.length) return 0;
-        return dataset.point.reduce((sum, p) =>
-            sum + (p.value && p.value[0] ? (p.value[0].intVal || 0) : 0), 0);
-    } catch (e) { return null; }
+        const dataset = bucket.dataset?.[0];
+        if (!dataset?.point?.length) return 0;
+        return dataset.point.reduce((sum, p) => sum + (p.value?.[0]?.intVal || 0), 0);
+    } catch { return null; }
 }
 
-async function loadStepsCard(dateStr) {
-    const countEl  = document.getElementById('steps-count');
-    const progEl   = document.getElementById('steps-progress');
-    const metaEl   = document.getElementById('steps-meta');
-    const goalLbl  = document.getElementById('steps-goal-lbl');
-    const badgeEl  = document.getElementById('steps-source-badge');
-    if (!countEl) return;
-
-    const goal = parseInt(_settings.steps_goal || 8000);
-    if (goalLbl) goalLbl.textContent = goal.toLocaleString();
-
-    let steps = null;
-    let source = 'Manual';
-
-    if (_gfitToken()) {
-        steps = await _fetchGfitSteps(dateStr);
-        if (steps !== null) {
-            localStorage.setItem(_GFIT_CACHE_PFX + dateStr, String(steps));
-            source = 'Google Fit';
-        }
+async function syncGfitSteps() {
+    if (!_gfitToken()) { showToast('warn', 'Not connected', 'Connect Google Fit first in Settings → Activity.'); return; }
+    const today    = toLocalDateStr(new Date());
+    const gfitSteps = await _fetchGfitSteps(today);
+    if (gfitSteps === null) { showToast('error', 'Sync failed', 'Could not reach Google Fit. Try again.'); return; }
+    if (gfitSteps > _stepCount) {
+        _stepCount = gfitSteps;
+        localStorage.setItem(_MANUAL_STEPS_PFX + today, String(gfitSteps));
+        _refreshStepsDisplay();
+        showToast('success', 'Synced', `${gfitSteps.toLocaleString()} steps from Google Fit.`);
+    } else {
+        showToast('info', 'Already up to date', `Phone sensor has more steps (${_stepCount.toLocaleString()}).`);
     }
-    if (steps === null) {
-        const cached = localStorage.getItem(_GFIT_CACHE_PFX + dateStr);
-        if (cached !== null) { steps = parseInt(cached); source = 'Google Fit'; }
-        else { steps = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + dateStr) || '0'); }
-    }
-
-    countEl.textContent = steps.toLocaleString();
-    if (progEl) progEl.style.width = Math.min(100, (steps / goal) * 100) + '%';
-    if (badgeEl) { badgeEl.textContent = source; badgeEl.style.display = source !== 'Manual' ? '' : 'none'; }
-
-    const kcal = Math.round(steps * 0.04);
-    const km   = (steps * 0.00075).toFixed(1);
-    const rem  = steps >= goal ? '✓ Goal reached!' : `${(goal - steps).toLocaleString()} to go`;
-    if (metaEl) metaEl.textContent = `~${kcal} kcal burned · ~${km} km · ${rem}`;
-
-    // Sync manual input if visible
-    const manualInput = document.getElementById('steps-manual-input');
-    if (manualInput && !manualInput.value) {
-        const manual = localStorage.getItem(_MANUAL_STEPS_PFX + dateStr);
-        if (manual) manualInput.value = manual;
-    }
-}
-
-async function syncSteps() {
-    const btn = document.getElementById('steps-sync-btn');
-    if (btn) btn.disabled = true;
-    localStorage.removeItem(_GFIT_CACHE_PFX + _trackDate);
-    await loadStepsCard(_trackDate);
-    if (btn) btn.disabled = false;
-    if (_gfitToken()) showToast('success', 'Steps synced', '');
-    else showToast('info', 'Not connected', 'Connect Google Fit in More → Activity.');
-}
-
-function saveManualSteps() {
-    const input = document.getElementById('steps-manual-input');
-    const val = parseInt(input ? input.value : '0');
-    if (isNaN(val) || val < 0) { showToast('warn', 'Invalid steps', 'Enter a valid step count.'); return; }
-    localStorage.setItem(_MANUAL_STEPS_PFX + _trackDate, String(val));
-    loadStepsCard(_trackDate);
-    showToast('success', 'Steps saved', `${val.toLocaleString()} steps logged for today.`);
-}
-
-function connectGoogleFit() {
-    const clientIdEl = document.getElementById('set-gfit-client-id');
-    const clientId = (clientIdEl ? clientIdEl.value.trim() : '') || localStorage.getItem('gfit_client_id') || '';
-    if (!clientId) {
-        showToast('warn', 'Client ID required', 'Paste your Google OAuth Client ID first.');
-        return;
-    }
-    localStorage.setItem('gfit_client_id', clientId);
-    const redirectUri = encodeURIComponent(window.location.origin + '/nutri-track/');
-    const scope = encodeURIComponent('https://www.googleapis.com/auth/fitness.activity.read');
-    window.location.href =
-        `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}` +
-        `&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&prompt=select_account`;
-}
-
-function disconnectGoogleFit() {
-    localStorage.removeItem(_GFIT_TOKEN_KEY);
-    localStorage.removeItem(_GFIT_EXPIRY_KEY);
     _updateGfitUI();
-    loadStepsCard(_trackDate);
-    showToast('info', 'Disconnected', 'Google Fit has been disconnected.');
 }
 
 function _updateGfitUI() {
     const connected  = !!_gfitToken();
     const connectBtn = document.getElementById('gfit-connect-btn');
     const disconnBtn = document.getElementById('gfit-disconnect-btn');
+    const syncBtn    = document.getElementById('gfit-sync-btn');
     const statusEl   = document.getElementById('gfit-status');
-    const clientIdEl = document.getElementById('set-gfit-client-id');
     if (connectBtn) connectBtn.style.display = connected ? 'none' : '';
     if (disconnBtn) disconnBtn.style.display  = connected ? '' : 'none';
+    if (syncBtn)    syncBtn.style.display     = connected ? '' : 'none';
     if (statusEl) {
         if (connected) {
             const expiry = new Date(parseInt(localStorage.getItem(_GFIT_EXPIRY_KEY) || '0'));
-            statusEl.innerHTML = `<span style="color:var(--success)">✓ Connected</span> · expires ${expiry.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+            statusEl.innerHTML = `<span style="color:var(--success)">&#10003; Connected</span> &middot; token expires ${expiry.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
         } else {
             statusEl.textContent = 'Not connected';
         }
     }
-    if (clientIdEl && !clientIdEl.value) {
-        clientIdEl.value = localStorage.getItem('gfit_client_id') || '';
-    }
+    // Update the source badge in the steps card
+    _updateStepTrackingUI();
 }
 
 if ('serviceWorker' in navigator) {
