@@ -97,7 +97,7 @@ const DEFAULT_SETTINGS = {
     name: '', age: 0, gender: '', activity_level: 'moderate',
     goal_type: 'maintain', onboarding_done: 0,
     calorie_goal: 2100, protein_goal: 90, carbs_goal: 250, fat_goal: 65,
-    water_goal: 10, height_cm: 170, weight_kg: 70, target_weight: 0,
+    water_goal: 10, steps_goal: 8000, height_cm: 170, weight_kg: 70, target_weight: 0,
     groq_api_key: ''
 };
 

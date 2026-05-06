@@ -317,6 +317,24 @@
             </div>
         </div>
 
+        <!-- Steps Card -->
+        <div class="card" id="steps-card">
+            <h2>
+                <i data-lucide="footprints" class="icon-md"></i> Steps Today
+                <span id="steps-source-badge" class="steps-source-badge" style="display:none">Google Fit</span>
+                <button class="btn-icon" id="steps-sync-btn" onclick="syncSteps()" title="Sync steps"
+                    style="margin-left:auto;padding:4px 8px;border:1px solid var(--card-border);border-radius:7px">
+                    <i data-lucide="refresh-cw" style="width:13px;height:13px;stroke:var(--muted)"></i>
+                </button>
+            </h2>
+            <div class="steps-display">
+                <span class="steps-count" id="steps-count">--</span>
+                <span class="steps-unit">&nbsp;/ <span id="steps-goal-lbl">8,000</span> steps</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill progress-fill-steps" id="steps-progress" style="width:0%"></div></div>
+            <div class="steps-meta" id="steps-meta">Connect Google Fit or log manually in More → Activity.</div>
+        </div>
+
         <!-- TODAY'S PLAN — shown dynamically -->
         <div id="today-plan-card" class="card today-plan-card" style="display:none">
             <h2>
@@ -865,6 +883,8 @@
                 <input type="number" id="set-target-weight" placeholder="e.g. 68" min="20" max="300" step="0.1" class="themed-input">
                 <label>Water Goal (glasses/day)</label>
                 <input type="number" id="set-water" placeholder="10" min="1" max="20" class="themed-input">
+                <label>Daily Steps Goal</label>
+                <input type="number" id="set-steps-goal" placeholder="8000" min="1000" max="50000" step="500" class="themed-input">
                 <label>Height (cm)</label>
                 <input type="number" id="set-height" placeholder="170" min="50" max="250" step="0.5" class="themed-input">
                 <label>AI API Key (Groq)</label>
@@ -896,6 +916,44 @@
                 <div class="weight-stat" style="flex:1"><div class="val" id="streak-longest">0</div><div class="lbl">Longest Streak</div></div>
             </div>
         </div>
+        <div class="card" id="activity-card">
+            <h2><i data-lucide="footprints" class="icon-md"></i> Activity &amp; Steps</h2>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                <span style="font-size:0.85rem;color:var(--muted)">Manual step entry for today</span>
+                <div class="steps-manual-row">
+                    <input type="number" id="steps-manual-input" class="themed-input" placeholder="e.g. 7500" min="0" max="100000" style="width:120px">
+                    <button class="btn btn-primary" style="width:auto;padding:10px 14px" onclick="saveManualSteps()">
+                        <i data-lucide="save"></i>
+                    </button>
+                </div>
+            </div>
+            <hr style="border:none;border-top:1px solid var(--input-border);margin:10px 0">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:0.9rem;font-weight:700"><i data-lucide="activity" style="width:14px;height:14px;stroke:var(--primary);vertical-align:middle"></i> Google Fit</span>
+                <span id="gfit-status" class="gfit-status">Not connected</span>
+            </div>
+            <label style="font-size:0.8rem;color:var(--muted);display:block;margin-bottom:4px">OAuth Client ID</label>
+            <input type="text" id="set-gfit-client-id" class="themed-input" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off" style="margin-bottom:10px">
+            <div class="gfit-connect-row">
+                <button class="btn btn-primary" id="gfit-connect-btn" onclick="connectGoogleFit()" style="flex:1">
+                    <i data-lucide="link"></i> Connect Google Fit
+                </button>
+                <button class="btn" id="gfit-disconnect-btn" onclick="disconnectGoogleFit()" style="display:none;flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border)">
+                    <i data-lucide="unlink"></i> Disconnect
+                </button>
+            </div>
+            <details class="gfit-setup-box">
+                <summary style="cursor:pointer;font-weight:600;color:var(--text)">How to set up Google Fit</summary>
+                <ol>
+                    <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a></li>
+                    <li>Create a project → enable <b>Fitness API</b></li>
+                    <li>APIs &amp; Services → Credentials → <b>Create OAuth 2.0 Client ID</b> (Web Application)</li>
+                    <li>Add Authorized Redirect URI:<br><code style="font-size:0.72rem;background:var(--macro-bg);padding:2px 6px;border-radius:4px">https://yaswanth963.github.io/nutri-track/</code></li>
+                    <li>Copy the <b>Client ID</b> and paste it above, then tap Connect</li>
+                </ol>
+            </details>
+        </div>
+
         <div class="card" id="pwa-install-card">
             <h2><i data-lucide="download" class="icon-md"></i> Install App</h2>
             <p style="color:var(--muted);font-size:0.85rem;margin-bottom:12px">Install NutriTrack on your device for offline access and a native app feel.</p>

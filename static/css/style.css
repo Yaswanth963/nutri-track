@@ -365,6 +365,35 @@ header {
 .water-reminder.show { display: flex; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
 
+/* ── Steps Card ── */
+.steps-display { display: flex; align-items: baseline; gap: 6px; margin: 12px 0 4px; }
+.steps-count { font-size: 2.4rem; font-weight: 800; color: var(--primary); line-height: 1; }
+.steps-unit { font-size: 0.83rem; color: var(--muted); }
+.steps-meta { font-size: 0.78rem; color: var(--muted); margin-top: 6px; min-height: 1em; }
+.steps-source-badge {
+    font-size: 0.68rem; font-weight: 700;
+    background: rgba(34,197,94,0.12);
+    color: var(--success, #4caf50);
+    border: 1px solid rgba(34,197,94,0.3);
+    padding: 2px 8px; border-radius: 99px; margin-left: 6px; vertical-align: middle;
+}
+.progress-fill-steps { background: linear-gradient(90deg, #22c55e, #4ade80); }
+
+/* ── Activity / GFit card ── */
+.gfit-status { font-size: 0.78rem; color: var(--muted); }
+.gfit-connect-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.gfit-connect-row .btn { flex: 1; }
+.gfit-setup-box {
+    background: var(--macro-bg); border-radius: 10px;
+    padding: 10px 14px; margin-top: 12px;
+    font-size: 0.81rem; color: var(--muted); line-height: 1.7;
+    border: 1px solid var(--card-border);
+}
+.gfit-setup-box summary { margin-bottom: 4px; }
+.gfit-setup-box ol { padding-left: 18px; margin: 6px 0 0; }
+.gfit-setup-box a { color: var(--primary); text-decoration: none; font-weight: 600; }
+.steps-manual-row { display: flex; gap: 8px; align-items: center; }
+
 /* ── Today's Plan card ── */
 .today-plan-card h2 {
     justify-content: space-between;

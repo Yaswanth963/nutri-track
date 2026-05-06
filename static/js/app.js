@@ -18,7 +18,7 @@ let _settings = {
     name: '', age: 0, gender: '', activity_level: 'moderate',
     goal_type: 'maintain', onboarding_done: 0,
     calorie_goal: 2100, protein_goal: 90, carbs_goal: 250, fat_goal: 65,
-    water_goal: 10, height_cm: 170, target_weight: 0
+    water_goal: 10, steps_goal: 8000, height_cm: 170, target_weight: 0
 };
 
 async function fetchSettings() {
@@ -261,6 +261,7 @@ document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.add('active');
         document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
         if (tab.dataset.tab === 'today') loadDailySummary();
+        if (tab.dataset.tab === 'track') loadStepsCard(_trackDate);
         if (tab.dataset.tab === 'weight') loadWeightHistory();
         if (tab.dataset.tab === 'history') { loadHistory(); loadCalorieTrend(); }
         if (tab.dataset.tab === 'plan') { loadMealPlan(); initPlanTab(); }
@@ -323,6 +324,7 @@ async function init() {
         showOnboarding();
     } else {
         loadDailySummary();
+        loadStepsCard(_trackDate);
         loadStreak();
         loadTodayPlan();
         startWaterReminder();
@@ -1861,6 +1863,8 @@ async function loadSettingsTab() {
     document.getElementById('set-fat').value = _settings.fat_goal || 65;
     document.getElementById('set-target-weight').value = _settings.target_weight || '';
     document.getElementById('set-water').value = _settings.water_goal;
+    const stepsGoalEl = document.getElementById('set-steps-goal');
+    if (stepsGoalEl) stepsGoalEl.value = _settings.steps_goal || 8000;
     document.getElementById('set-height').value = _settings.height_cm;
     // Groq API key
     const groqKeyEl = document.getElementById('set-groq-key');
@@ -1869,7 +1873,9 @@ async function loadSettingsTab() {
     setSettingsDiet(_settings.diet_type || 'veg', false);
     // Disable save btn until changes made
     _setSettingsSaveDirty(false);
-    const settingsFields = ['set-cal','set-protein','set-carbs','set-fat','set-target-weight','set-water','set-height','set-groq-key'];
+    _updateGfitUI();
+    loadStepsCard(_trackDate);
+    const settingsFields = ['set-cal','set-protein','set-carbs','set-fat','set-target-weight','set-water','set-steps-goal','set-height','set-groq-key'];
     settingsFields.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', () => _setSettingsSaveDirty(true), { once: false });
@@ -1887,6 +1893,7 @@ async function saveSettings() {
         fat_goal: parseInt(document.getElementById('set-fat').value) || 65,
         target_weight: parseFloat(document.getElementById('set-target-weight').value) || 0,
         water_goal: parseInt(document.getElementById('set-water').value) || 10,
+        steps_goal: parseInt(document.getElementById('set-steps-goal')?.value || '0') || 8000,
         height_cm: parseFloat(document.getElementById('set-height').value) || 170,
         diet_type: _settingsDiet || 'veg',
     };
@@ -2241,6 +2248,173 @@ async function installPWA() {
     _installPrompt.prompt();
     const { outcome } = await _installPrompt.userChoice;
     if (outcome === 'accepted') _installPrompt = null;
+}
+
+// ── Steps & Google Fit ────────────────────────────────────
+const _GFIT_TOKEN_KEY  = 'gfit_token';
+const _GFIT_EXPIRY_KEY = 'gfit_expiry';
+const _GFIT_CACHE_PFX  = 'gfit_steps_';
+const _MANUAL_STEPS_PFX = 'manual_steps_';
+
+// Check for OAuth token returned in URL hash (after Google redirect)
+(function _checkGfitRedirect() {
+    if (!window.location.hash) return;
+    const params = new URLSearchParams(window.location.hash.substring(1));
+    const token = params.get('access_token');
+    const expiresIn = params.get('expires_in');
+    if (token) {
+        localStorage.setItem(_GFIT_TOKEN_KEY, token);
+        localStorage.setItem(_GFIT_EXPIRY_KEY, String(Date.now() + parseInt(expiresIn || '3600') * 1000));
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        setTimeout(() => showToast('success', 'Google Fit connected!', 'Steps will sync automatically.'), 800);
+    }
+})();
+
+function _gfitToken() {
+    const token  = localStorage.getItem(_GFIT_TOKEN_KEY);
+    const expiry = parseInt(localStorage.getItem(_GFIT_EXPIRY_KEY) || '0');
+    return (token && Date.now() < expiry) ? token : null;
+}
+
+async function _fetchGfitSteps(dateStr) {
+    const token = _gfitToken();
+    if (!token) return null;
+    const d = new Date(dateStr + 'T00:00:00');
+    const startMs = d.getTime();
+    const endMs   = startMs + 86400000;
+    try {
+        const res = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                aggregateBy: [{ dataTypeName: 'com.google.step_count.delta' }],
+                bucketByTime: { durationMillis: 86400000 },
+                startTimeMillis: startMs,
+                endTimeMillis: endMs
+            })
+        });
+        if (!res.ok) {
+            if (res.status === 401) localStorage.removeItem(_GFIT_TOKEN_KEY);
+            return null;
+        }
+        const data = await res.json();
+        const bucket = data.bucket && data.bucket[0];
+        if (!bucket) return 0;
+        const dataset = bucket.dataset && bucket.dataset[0];
+        if (!dataset || !dataset.point || !dataset.point.length) return 0;
+        return dataset.point.reduce((sum, p) =>
+            sum + (p.value && p.value[0] ? (p.value[0].intVal || 0) : 0), 0);
+    } catch (e) { return null; }
+}
+
+async function loadStepsCard(dateStr) {
+    const countEl  = document.getElementById('steps-count');
+    const progEl   = document.getElementById('steps-progress');
+    const metaEl   = document.getElementById('steps-meta');
+    const goalLbl  = document.getElementById('steps-goal-lbl');
+    const badgeEl  = document.getElementById('steps-source-badge');
+    if (!countEl) return;
+
+    const goal = parseInt(_settings.steps_goal || 8000);
+    if (goalLbl) goalLbl.textContent = goal.toLocaleString();
+
+    let steps = null;
+    let source = 'Manual';
+
+    if (_gfitToken()) {
+        steps = await _fetchGfitSteps(dateStr);
+        if (steps !== null) {
+            localStorage.setItem(_GFIT_CACHE_PFX + dateStr, String(steps));
+            source = 'Google Fit';
+        }
+    }
+    if (steps === null) {
+        const cached = localStorage.getItem(_GFIT_CACHE_PFX + dateStr);
+        if (cached !== null) { steps = parseInt(cached); source = 'Google Fit'; }
+        else { steps = parseInt(localStorage.getItem(_MANUAL_STEPS_PFX + dateStr) || '0'); }
+    }
+
+    countEl.textContent = steps.toLocaleString();
+    if (progEl) progEl.style.width = Math.min(100, (steps / goal) * 100) + '%';
+    if (badgeEl) { badgeEl.textContent = source; badgeEl.style.display = source !== 'Manual' ? '' : 'none'; }
+
+    const kcal = Math.round(steps * 0.04);
+    const km   = (steps * 0.00075).toFixed(1);
+    const rem  = steps >= goal ? '✓ Goal reached!' : `${(goal - steps).toLocaleString()} to go`;
+    if (metaEl) metaEl.textContent = `~${kcal} kcal burned · ~${km} km · ${rem}`;
+
+    // Sync manual input if visible
+    const manualInput = document.getElementById('steps-manual-input');
+    if (manualInput && !manualInput.value) {
+        const manual = localStorage.getItem(_MANUAL_STEPS_PFX + dateStr);
+        if (manual) manualInput.value = manual;
+    }
+}
+
+async function syncSteps() {
+    const btn = document.getElementById('steps-sync-btn');
+    if (btn) btn.disabled = true;
+    localStorage.removeItem(_GFIT_CACHE_PFX + _trackDate);
+    await loadStepsCard(_trackDate);
+    if (btn) btn.disabled = false;
+    if (_gfitToken()) showToast('success', 'Steps synced', '');
+    else showToast('info', 'Not connected', 'Connect Google Fit in More → Activity.');
+}
+
+function saveManualSteps() {
+    const input = document.getElementById('steps-manual-input');
+    const val = parseInt(input ? input.value : '0');
+    if (isNaN(val) || val < 0) { showToast('warn', 'Invalid steps', 'Enter a valid step count.'); return; }
+    localStorage.setItem(_MANUAL_STEPS_PFX + _trackDate, String(val));
+    loadStepsCard(_trackDate);
+    showToast('success', 'Steps saved', `${val.toLocaleString()} steps logged for today.`);
+}
+
+function connectGoogleFit() {
+    const clientIdEl = document.getElementById('set-gfit-client-id');
+    const clientId = (clientIdEl ? clientIdEl.value.trim() : '') || localStorage.getItem('gfit_client_id') || '';
+    if (!clientId) {
+        showToast('warn', 'Client ID required', 'Paste your Google OAuth Client ID first.');
+        return;
+    }
+    localStorage.setItem('gfit_client_id', clientId);
+    const redirectUri = encodeURIComponent(window.location.origin + '/nutri-track/');
+    const scope = encodeURIComponent('https://www.googleapis.com/auth/fitness.activity.read');
+    window.location.href =
+        `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${redirectUri}&response_type=token&scope=${scope}&prompt=select_account`;
+}
+
+function disconnectGoogleFit() {
+    localStorage.removeItem(_GFIT_TOKEN_KEY);
+    localStorage.removeItem(_GFIT_EXPIRY_KEY);
+    _updateGfitUI();
+    loadStepsCard(_trackDate);
+    showToast('info', 'Disconnected', 'Google Fit has been disconnected.');
+}
+
+function _updateGfitUI() {
+    const connected  = !!_gfitToken();
+    const connectBtn = document.getElementById('gfit-connect-btn');
+    const disconnBtn = document.getElementById('gfit-disconnect-btn');
+    const statusEl   = document.getElementById('gfit-status');
+    const clientIdEl = document.getElementById('set-gfit-client-id');
+    if (connectBtn) connectBtn.style.display = connected ? 'none' : '';
+    if (disconnBtn) disconnBtn.style.display  = connected ? '' : 'none';
+    if (statusEl) {
+        if (connected) {
+            const expiry = new Date(parseInt(localStorage.getItem(_GFIT_EXPIRY_KEY) || '0'));
+            statusEl.innerHTML = `<span style="color:var(--success)">✓ Connected</span> · expires ${expiry.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+        } else {
+            statusEl.textContent = 'Not connected';
+        }
+    }
+    if (clientIdEl && !clientIdEl.value) {
+        clientIdEl.value = localStorage.getItem('gfit_client_id') || '';
+    }
 }
 
 if ('serviceWorker' in navigator) {
