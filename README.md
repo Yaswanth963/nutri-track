@@ -15,18 +15,7 @@ AI-powered diet tracking app — calorie tracking, weight tracking, water remind
 
 ## Setup
 
-### 1. Get Free API Keys
-
-**Gemini API (AI food analysis)** — Free, 15 req/min:
-1. Go to https://aistudio.google.com/apikey
-2. Click "Create API key" — copy it
-
-**Supabase (Free PostgreSQL database, data persists forever)**:
-1. Go to https://supabase.com → New Project (free tier)
-2. After creation: Settings → Database → Connection string → copy the URI
-3. It looks like: `postgresql://postgres:[password]@db.xxx.supabase.co:5432/postgres`
-
-### 2. Run Locally
+### 1. Run Locally
 ```bash
 cd diet-tracker
 pip install -r requirements.txt
