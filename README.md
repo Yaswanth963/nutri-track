@@ -36,26 +36,6 @@ python app.py
 ```
 Open http://localhost:5000
 
-### 3. Deploy to Render (Free, Persistent)
-1. Push the `diet-tracker/` folder to a GitHub repo
-2. Go to https://render.com → New → Web Service
-3. Connect your GitHub repo
-4. Set:
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app`
-5. Add Environment Variables:
-   - `GEMINI_API_KEY` = your Gemini key
-   - `DATABASE_URL` = your Supabase connection string
-6. Deploy — you get a free URL like `https://diet-tracker-xxxx.onrender.com`
-
-> Data is stored in Supabase PostgreSQL — persists across all deploys permanently.
-
-## Monthly Cost: ₹0
-- Gemini API: Free (15 RPM)
-- Supabase: Free (500MB PostgreSQL)
-- Render: Free (750 hrs/month)
-
-
 
 <img width="479" height="856" alt="image" src="https://github.com/user-attachments/assets/7b6d2b0a-6edb-436a-8003-df074b755671" />
 <img width="459" height="736" alt="image" src="https://github.com/user-attachments/assets/7868d194-b4f1-462e-86cb-b9ca6ffad1c0" />
